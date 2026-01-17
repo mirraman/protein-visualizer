@@ -110,7 +110,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
     try {
       const dataUrl = await toPng(vizRef.current, { cacheBust: true, pixelRatio: 2 });
       const link = document.createElement("a");
-      link.download = `protein-visualization-\${latticeType}.png`;
+      link.download = `protein-visualization-${latticeType}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
