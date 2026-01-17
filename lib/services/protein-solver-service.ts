@@ -22,6 +22,8 @@ export interface SolverConfig {
   initialDirections?: Direction[];
   maxIterations: number;
   populationSize?: number; // For Monte Carlo
+  // Lattice type
+  latticeType?: '2D' | '3D';
   // GA-specific
   crossoverRate?: number;
   mutationRate?: number;
@@ -75,6 +77,7 @@ export class ProteinSolverService {
           maxIterations: config.maxIterations,
           populationSize: config.populationSize || 50,
           initialDirections: config.initialDirections,
+          latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)
         });
       } else if (config.algorithm === 'ga') {
@@ -87,6 +90,7 @@ export class ProteinSolverService {
           eliteCount: config.eliteCount ?? 3,
           tournamentSize: config.tournamentSize ?? 3,
           initialDirections: config.initialDirections,
+          latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)
         });
       } else if (config.algorithm === 'es') {
@@ -101,6 +105,7 @@ export class ProteinSolverService {
           stagnationWindow: 10,
           plusSelection: true,
           initialDirections: config.initialDirections,
+          latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)
         });
       } else if (config.algorithm === 'ep') {
@@ -112,6 +117,7 @@ export class ProteinSolverService {
           tournamentSize: config.tournamentSize ?? 3,
           eliteCount: 2,
           initialDirections: config.initialDirections,
+          latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)
         });
       } else if (config.algorithm === 'gp') {
@@ -126,6 +132,7 @@ export class ProteinSolverService {
           tournamentSize: 3,
           rolloutCount: 1,
           initialDirections: config.initialDirections,
+          latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)
         });
       } else {
@@ -136,6 +143,7 @@ export class ProteinSolverService {
           finalTemperature: config.finalTemperature || 0.01,
           coolingRate: config.coolingRate || 0.95,
           initialDirections: config.initialDirections,
+          latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)
         });
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, Suspense } from "react";
+import React, { useState, useCallback, Suspense, useRef, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera, Html } from "@react-three/drei";
 import ProteinModel from "./protein-model";
 import {
@@ -27,7 +27,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Direction } from "@/lib/types";
 import {
   ProteinSolverService,
@@ -50,6 +50,21 @@ type AlgorithmType =
   | "ep"
   | "gp";
 
+interface ScreenshotHandle {
+  capture: () => string;
+}
+
+const CanvasScreenshot = forwardRef<ScreenshotHandle>((_, ref) => {
+  const { gl, scene, camera } = useThree();
+  useImperativeHandle(ref, () => ({
+    capture: () => {
+      gl.render(scene, camera);
+      return gl.domElement.toDataURL("image/png");
+    },
+  }));
+  return null;
+});
+
 const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
   sequence,
   initialDirections,
@@ -64,6 +79,9 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
   const [iterations, setIterations] = useState([1000]);
   const [populationSize, setPopulationSize] = useState([50]); // For Monte Carlo
   const [temperature, setTemperature] = useState([10]); // For Simulated Annealing
+
+  // Lattice Parameter
+  const [latticeType, setLatticeType] = useState<"2D" | "3D">("2D");
 
   // GA parameters
   const [crossoverRate, setCrossoverRate] = useState([0.9]);
@@ -95,6 +113,23 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
   // UI state
   const [showDetails, setShowDetails] = useState(false);
 
+  // Ref for export
+  const screenshotRef = useRef<ScreenshotHandle>(null);
+
+  const handleExportImage = () => {
+    if (screenshotRef.current) {
+      try {
+        const dataUrl = screenshotRef.current.capture();
+        const link = document.createElement("a");
+        link.download = `protein-visualization-${latticeType}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error("Failed to export image:", err);
+      }
+    }
+  };
+
   // Solver service instance
   const [solverService] = useState(() => new ProteinSolverService());
 
@@ -115,6 +150,7 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
         sequence: activeSequence,
         initialDirections,
         maxIterations: iterations[0],
+        latticeType,
         populationSize:
           algorithmType === "monte-carlo" ||
           algorithmType === "ga" ||
@@ -185,6 +221,7 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
     iterations,
     populationSize,
     temperature,
+    latticeType,
     initialDirections,
     solverService,
     onOptimizationComplete,
@@ -262,6 +299,27 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                       Evolutionary Programming (EP)
                     </SelectItem>
                     <SelectItem value="gp">Genetic Programming (GP)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Lattice Type</Label>
+                <Select
+                  value={latticeType}
+                  onValueChange={(value: "2D" | "3D") => {
+                    setLatticeType(value);
+                    setCurrentResult(null);
+                    setBestConformation(null);
+                  }}
+                  disabled={isRunning}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2D">2D Square Lattice</SelectItem>
+                    <SelectItem value="3D">3D Cubic Lattice</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -674,11 +732,18 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
             {/* Primary Visualization */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Visualization</CardTitle>
+                <CardTitle className="text-lg flex justify-between items-center">
+                  <span>Visualization</span>
+                  <Button variant="outline" size="sm" onClick={handleExportImage} title="Export as Image">
+                    <Download className="h-4 w-4 mr-1" />
+                    Export
+                  </Button>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-48 bg-gray-50 rounded-md overflow-hidden">
                   <Canvas
+                    gl={{ preserveDrawingBuffer: true }}
                     key={`solver-canvas-${
                       bestConformation?.sequence || "empty"
                     }`}
@@ -712,8 +777,9 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                         <ProteinModel
                           sequence={bestConformation.sequence}
                           directions={bestConformation.directions}
-                          type="3d"
+                          type={latticeType.toLowerCase() as "2d" | "3d"}
                         />
+                        <CanvasScreenshot ref={screenshotRef} />
                       </Suspense>
                     ) : (
                       <Html center>
