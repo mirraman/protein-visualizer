@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import ProteinModel from "./protein-model";
 import {
@@ -27,7 +27,6 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { ChevronDown, ChevronUp, Download } from "lucide-react";
-import { toPng } from "html-to-image";
 import { Direction } from "@/lib/types";
 import {
   MonteCarloSolver,
@@ -45,6 +44,21 @@ interface ProteinSolverProps {
   initialDirections?: Direction[];
   onOptimizationComplete: (directions: Direction[], energy: number) => void;
 }
+
+interface ScreenshotHandle {
+  capture: () => string;
+}
+
+const CanvasScreenshot = forwardRef<ScreenshotHandle>((_, ref) => {
+  const { gl, scene, camera } = useThree();
+  useImperativeHandle(ref, () => ({
+    capture: () => {
+      gl.render(scene, camera);
+      return gl.domElement.toDataURL("image/png");
+    },
+  }));
+  return null;
+});
 
 type AlgorithmType =
   | "monte-carlo"
@@ -100,21 +114,19 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
   const [showDetails, setShowDetails] = useState(false);
   
   // Ref for export
-  const vizRef = useRef<HTMLDivElement>(null);
+  const screenshotRef = useRef<ScreenshotHandle>(null);
 
-  const handleExportImage = async () => {
-    if (vizRef.current === null) {
-      return;
-    }
-
-    try {
-      const dataUrl = await toPng(vizRef.current, { cacheBust: true, pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `protein-visualization-${latticeType}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      console.error("Failed to export image:", err);
+  const handleExportImage = () => {
+    if (screenshotRef.current) {
+      try {
+        const dataUrl = screenshotRef.current.capture();
+        const link = document.createElement("a");
+        link.download = `protein-visualization-${latticeType}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error("Failed to export image:", err);
+      }
     }
   };
 
@@ -642,7 +654,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div ref={vizRef} className="h-48 bg-gray-50 rounded-md overflow-hidden">
+                <div className="h-48 bg-gray-50 rounded-md overflow-hidden">
                   <Canvas gl={{ preserveDrawingBuffer: true }}>
                     <OrthographicCamera
                       makeDefault
@@ -665,6 +677,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                       directions={bestConformation.directions}
                       type={latticeType.toLowerCase() as "2d" | "3d"}
                     />
+                    <CanvasScreenshot ref={screenshotRef} />
                   </Canvas>
                 </div>
               </CardContent>
