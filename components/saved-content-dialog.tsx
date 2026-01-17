@@ -377,7 +377,7 @@ export function SavedContentDialog({
                           {protein.sequence.length}
                         </td>
                         <td className="border p-2">
-                          <div className="flex gap-2 items-center flex-wrap">
+                          <div className="flex gap-2 items-center flex-nowrap">
                             <Button
                               size="sm"
                               variant="outline"

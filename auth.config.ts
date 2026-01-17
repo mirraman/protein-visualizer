@@ -63,4 +63,7 @@ export const authConfig: NextAuthOptions = {
       },
     }),
   ],
-}; 
+};
+
+// Export authOptions as an alias for authConfig for compatibility
+export const authOptions = authConfig; 
