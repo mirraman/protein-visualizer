@@ -25,6 +25,7 @@ export interface SolverParameters {
   sequence: string;
   initialDirections?: Direction[];
   onProgress?: (progress: any) => void;
+  latticeType?: '2D' | '3D';
 }
 
 export interface MonteCarloParameters extends SolverParameters {
@@ -78,10 +79,21 @@ export abstract class BaseSolver {
   protected isStopped: boolean = false;
   protected onProgress?: (progress: any) => void;
 
+
+  protected possibleDirections: Direction[];
+
   constructor(parameters: SolverParameters) {
     this.sequence = parameters.sequence;
     this.maxIterations = parameters.maxIterations;
     this.onProgress = parameters.onProgress;
+
+    // Set possible directions based on lattice type
+    // Default to 2D if not specified
+    if (parameters.latticeType === '3D') {
+      this.possibleDirections = ["L", "R", "U", "D", "F", "B"];
+    } else {
+      this.possibleDirections = ["L", "R", "U", "D"];
+    }
   }
 
   abstract solve(): Promise<SolverResult>;
@@ -92,22 +104,23 @@ export abstract class BaseSolver {
 
   protected generateRandomDirections(): Direction[] {
     const directions: Direction[] = [];
-    const possibleDirections: Direction[] = ["L", "R", "U", "D"];
+    // Use the instance's possible directions
+    const possibleDirections: Direction[] = this.possibleDirections;
     const occupied = new Set<string>();
     let currentPos = { x: 0, y: 0, z: 0 };
-    
+
     // Always start with the first position
     occupied.add(`${currentPos.x},${currentPos.y},${currentPos.z}`);
-    
+
     for (let i = 0; i < this.sequence.length - 1; i++) {
       // Try to find a non-intersecting direction
       let directionFound = false;
       const shuffledDirections = [...possibleDirections].sort(() => Math.random() - 0.5);
-      
+
       for (const dir of shuffledDirections) {
         const nextPos = this.getNextPosition(currentPos, dir);
         const posKey = `${nextPos.x},${nextPos.y},${nextPos.z}`;
-        
+
         if (!occupied.has(posKey)) {
           directions.push(dir);
           occupied.add(posKey);
@@ -116,7 +129,7 @@ export abstract class BaseSolver {
           break;
         }
       }
-      
+
       // If no valid direction found, use a random one (fallback)
       if (!directionFound) {
         const randomDir = possibleDirections[Math.floor(Math.random() * possibleDirections.length)];
@@ -126,7 +139,7 @@ export abstract class BaseSolver {
         // Don't add to occupied set to allow some flexibility
       }
     }
-    
+
     return directions;
   }
 
@@ -136,6 +149,8 @@ export abstract class BaseSolver {
       case 'R': return { x: pos.x + 1, y: pos.y, z: pos.z };
       case 'U': return { x: pos.x, y: pos.y + 1, z: pos.z };
       case 'D': return { x: pos.x, y: pos.y - 1, z: pos.z };
+      case 'F': return { x: pos.x, y: pos.y, z: pos.z + 1 };
+      case 'B': return { x: pos.x, y: pos.y, z: pos.z - 1 };
       default: return pos;
     }
   }

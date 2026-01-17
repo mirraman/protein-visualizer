@@ -75,6 +75,7 @@
     "expo-gl": "latest",
     "expo-sqlite": "latest",
     "gel": "latest",
+    "html-to-image": "^1.11.13",
     "input-otp": "1.4.1",
     "knex": "latest",
     "kysely": "latest",

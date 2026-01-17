@@ -149,7 +149,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
 
   private mutate(genes: Direction[]): Direction[] {
     const dirs: Direction[] = genes.slice();
-    const alphabet: Direction[] = ["L", "R", "U", "D"];
+    const alphabet: Direction[] = this.possibleDirections;
     for (let i = 0; i < dirs.length; i++) {
       if (Math.random() < this.mutationRate) {
         // Change to a different direction

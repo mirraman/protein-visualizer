@@ -3,20 +3,19 @@ import { BaseSolver, type SolverResult, type Conformation, type GeneticProgrammi
 import type { Direction } from "../types";
 
 // GP for Direction sequences: evolve Direction[] directly with GP-style operators
-type Program = { 
+type Program = {
   directions: Direction[];
   fitness?: number;
 };
 
-function randomDirection(): Direction {
-  const dirs: Direction[] = ['L', 'R', 'U', 'D'];
-  return dirs[Math.floor(Math.random() * dirs.length)];
+function randomDirection(possibleDirections: Direction[]): Direction {
+  return possibleDirections[Math.floor(Math.random() * possibleDirections.length)];
 }
 
-function createRandomProgram(length: number): Program {
+function createRandomProgram(length: number, possibleDirections: Direction[]): Program {
   const dirs: Direction[] = [];
   for (let i = 0; i < length; i++) {
-    dirs.push(randomDirection());
+    dirs.push(randomDirection(possibleDirections));
   }
   return { directions: dirs };
 }
@@ -25,7 +24,7 @@ function createRandomProgram(length: number): Program {
 function gpCrossover(a: Program, b: Program): [Program, Program] {
   const len = Math.min(a.directions.length, b.directions.length);
   if (len < 3) return [{ directions: a.directions.slice() }, { directions: b.directions.slice() }];
-  
+
   // Create 2-4 crossover points
   const numPoints = 2 + Math.floor(Math.random() * 3);
   const points: number[] = [];
@@ -33,12 +32,12 @@ function gpCrossover(a: Program, b: Program): [Program, Program] {
     points.push(Math.floor(Math.random() * len));
   }
   points.sort((x, y) => x - y);
-  
+
   const child1: Direction[] = [];
   const child2: Direction[] = [];
   let useA = true;
   let pointIdx = 0;
-  
+
   for (let i = 0; i < len; i++) {
     if (pointIdx < points.length && i >= points[pointIdx]) {
       useA = !useA;
@@ -47,33 +46,33 @@ function gpCrossover(a: Program, b: Program): [Program, Program] {
     child1.push(useA ? a.directions[i] : b.directions[i]);
     child2.push(useA ? b.directions[i] : a.directions[i]);
   }
-  
+
   return [{ directions: child1 }, { directions: child2 }];
 }
 
 // GP-style mutation: segment replacement and local changes
-function gpMutate(prog: Program, mutationRate: number): Program {
+function gpMutate(prog: Program, mutationRate: number, possibleDirections: Direction[]): Program {
   const dirs = prog.directions.slice();
   const len = dirs.length;
-  
+
   // Segment replacement (10% chance)
   if (Math.random() < 0.1 && len > 4) {
     const start = Math.floor(Math.random() * (len - 2));
     const segLen = 1 + Math.floor(Math.random() * Math.min(4, len - start));
     for (let i = start; i < start + segLen; i++) {
-      dirs[i] = randomDirection();
+      dirs[i] = randomDirection(possibleDirections);
     }
   }
-  
+
   // Point mutations
   for (let i = 0; i < len; i++) {
     if (Math.random() < mutationRate) {
       const current = dirs[i];
-      const choices: Direction[] = ['L', 'R', 'U', 'D'].filter(d => d !== current);
+      const choices: Direction[] = possibleDirections.filter(d => d !== current);
       dirs[i] = choices[Math.floor(Math.random() * choices.length)];
     }
   }
-  
+
   return { directions: dirs };
 }
 
@@ -114,13 +113,13 @@ export class GeneticProgrammingSolver extends BaseSolver {
       while (next.length < this.populationSize) {
         const a = this.tournamentSelect();
         const b = this.tournamentSelect();
-        let [childA, childB] = Math.random() < this.crossoverRate ? 
-          gpCrossover(a, b) : 
+        let [childA, childB] = Math.random() < this.crossoverRate ?
+          gpCrossover(a, b) :
           [{ directions: a.directions.slice() }, { directions: b.directions.slice() }];
-        
-        if (Math.random() < this.mutationRate) childA = gpMutate(childA, this.mutationRate);
-        if (Math.random() < this.mutationRate) childB = gpMutate(childB, this.mutationRate);
-        
+
+        if (Math.random() < this.mutationRate) childA = gpMutate(childA, this.mutationRate, this.possibleDirections);
+        if (Math.random() < this.mutationRate) childB = gpMutate(childB, this.mutationRate, this.possibleDirections);
+
         next.push(childA);
         if (next.length < this.populationSize) next.push(childB);
       }
@@ -149,7 +148,7 @@ export class GeneticProgrammingSolver extends BaseSolver {
     const arr: Program[] = [];
     const length = this.sequence.length - 1;
     for (let i = 0; i < this.populationSize; i++) {
-      arr.push(createRandomProgram(length));
+      arr.push(createRandomProgram(length, this.possibleDirections));
     }
     return arr;
   }
@@ -157,7 +156,7 @@ export class GeneticProgrammingSolver extends BaseSolver {
   private evaluatePopulationAndGetBest(): { directions: Direction[]; energy: number } {
     let bestEnergy = Number.POSITIVE_INFINITY;
     let bestDirs: Direction[] = [];
-    
+
     for (const p of this.population) {
       const energy = EnergyCalculator.calculateEnergy(this.sequence, p.directions);
       p.fitness = energy;

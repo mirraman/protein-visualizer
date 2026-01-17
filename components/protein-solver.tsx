@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import ProteinModel from "./protein-model";
 import {
@@ -26,7 +26,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Direction } from "@/lib/types";
 import {
   MonteCarloSolver,
@@ -44,6 +44,21 @@ interface ProteinSolverProps {
   initialDirections?: Direction[];
   onOptimizationComplete: (directions: Direction[], energy: number) => void;
 }
+
+interface ScreenshotHandle {
+  capture: () => string;
+}
+
+const CanvasScreenshot = forwardRef<ScreenshotHandle>((_, ref) => {
+  const { gl, scene, camera } = useThree();
+  useImperativeHandle(ref, () => ({
+    capture: () => {
+      gl.render(scene, camera);
+      return gl.domElement.toDataURL("image/png");
+    },
+  }));
+  return null;
+});
 
 type AlgorithmType =
   | "monte-carlo"
@@ -64,6 +79,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
   const [iterations, setIterations] = useState([1000]);
   const [populationSize, setPopulationSize] = useState([50]); // For Monte Carlo
   const [temperature, setTemperature] = useState([10]); // For Simulated Annealing
+  
+  // Lattice Parameter
+  const [latticeType, setLatticeType] = useState<"2D" | "3D">("2D");
 
   // GA parameters
   const [crossoverRate, setCrossoverRate] = useState([0.9]);
@@ -94,6 +112,23 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
 
   // UI state
   const [showDetails, setShowDetails] = useState(false);
+  
+  // Ref for export
+  const screenshotRef = useRef<ScreenshotHandle>(null);
+
+  const handleExportImage = () => {
+    if (screenshotRef.current) {
+      try {
+        const dataUrl = screenshotRef.current.capture();
+        const link = document.createElement("a");
+        link.download = `protein-visualization-${latticeType}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch (err) {
+        console.error("Failed to export image:", err);
+      }
+    }
+  };
 
   const runSolver = async () => {
     if (!sequence) return;
@@ -112,6 +147,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           maxIterations: iterations[0],
           populationSize: populationSize[0],
           initialDirections,
+          latticeType,
         });
       } else if (algorithmType === "simulated-annealing") {
         solver = new SimulatedAnnealingSolver({
@@ -121,6 +157,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           finalTemperature: 0.01,
           coolingRate: 0.95,
           initialDirections,
+          latticeType,
         });
       } else if (algorithmType === "ga") {
         solver = new GeneticAlgorithmSolver({
@@ -132,6 +169,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           eliteCount: eliteCount[0],
           tournamentSize: tournamentSize[0],
           initialDirections,
+          latticeType,
         });
       } else if (algorithmType === "es") {
         solver = new EvolutionStrategiesSolver({
@@ -145,6 +183,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           stagnationWindow: 10,
           plusSelection: true,
           initialDirections,
+          latticeType,
         });
       } else if (algorithmType === "ep") {
         solver = new EvolutionaryProgrammingSolver({
@@ -155,6 +194,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           tournamentSize: tournamentSize[0],
           eliteCount: 2,
           initialDirections,
+          latticeType,
         });
       } else if (algorithmType === "gp") {
         solver = new GeneticProgrammingSolver({
@@ -168,6 +208,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           tournamentSize: tournamentSize[0],
           rolloutCount: 1,
           initialDirections,
+          latticeType,
         });
       } else {
         throw new Error(`Unknown algorithm type: ${algorithmType}`);
@@ -246,6 +287,27 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                       Evolutionary Programming (EP)
                     </SelectItem>
                     <SelectItem value="gp">Genetic Programming (GP)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Lattice Type</Label>
+                <Select
+                  value={latticeType}
+                  onValueChange={(value: "2D" | "3D") => {
+                    setLatticeType(value);
+                    setCurrentResult(null);
+                    setBestConformation(null);
+                  }}
+                  disabled={isRunning}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2D">2D Square Lattice</SelectItem>
+                    <SelectItem value="3D">3D Cubic Lattice</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -583,11 +645,17 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
             {/* Primary Visualization */}
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Visualization</CardTitle>
+                <CardTitle className="text-lg flex justify-between items-center">
+                  <span>Visualization</span>
+                  <Button variant="outline" size="sm" onClick={handleExportImage} title="Export as Image">
+                    <Download className="h-4 w-4 mr-1" />
+                    Export
+                  </Button>
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-48 bg-gray-50 rounded-md overflow-hidden">
-                  <Canvas>
+                  <Canvas gl={{ preserveDrawingBuffer: true }}>
                     <OrthographicCamera
                       makeDefault
                       position={[0, 0, 10]}
@@ -607,8 +675,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                     <ProteinModel
                       sequence={bestConformation.sequence}
                       directions={bestConformation.directions}
-                      type="3d"
+                      type={latticeType.toLowerCase() as "2d" | "3d"}
                     />
+                    <CanvasScreenshot ref={screenshotRef} />
                   </Canvas>
                 </div>
               </CardContent>

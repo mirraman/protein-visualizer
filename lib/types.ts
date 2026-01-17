@@ -1,6 +1,6 @@
 import { Document, Types } from 'mongoose'
 
-export type Direction = 'L' | 'R' | 'U' | 'D'
+export type Direction = 'L' | 'R' | 'U' | 'D' | 'F' | 'B'
 
 export interface IUser extends Document {
   username: string

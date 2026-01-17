@@ -112,7 +112,7 @@ export class EvolutionStrategiesSolver extends BaseSolver {
   }
 
   private mutate(ind: Individual): Individual {
-    const alphabet: Direction[] = ["L", "R", "U", "D"];
+    const alphabet: Direction[] = this.possibleDirections;
     const dirs = ind.directions.slice();
     const rate = ind.sigma;
     for (let i = 0; i < dirs.length; i++) {

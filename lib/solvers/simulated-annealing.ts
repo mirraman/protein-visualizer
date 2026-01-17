@@ -17,14 +17,14 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   async solve(): Promise<SolverResult> {
     const startTime = Date.now();
     const energyHistory: { iteration: number; energy: number }[] = [];
-    
+
     // Initialize temperature first
     let temperature = this.initialTemperature;
-    
+
     // Initialize with random or provided conformation
     let currentConformation = this.initializeConformation();
     let bestConformation = { ...currentConformation };
-    
+
     energyHistory.push({ iteration: 0, energy: currentConformation.energy });
 
     // Simulated Annealing optimization
@@ -36,26 +36,26 @@ export class SimulatedAnnealingSolver extends BaseSolver {
 
       // Generate neighbor conformation
       const neighborConformation = this.generateNeighbor(currentConformation);
-      
+
       // Accept or reject the move
       if (this.acceptMove(currentConformation.energy, neighborConformation.energy, temperature)) {
         currentConformation = neighborConformation;
-        
+
         // Update global best
         if (currentConformation.energy < bestConformation.energy) {
           bestConformation = { ...currentConformation };
         }
       }
-      
+
       // Cool down temperature
       temperature = this.updateTemperature(temperature, iteration);
-      
+
       // Record energy history (sample every 10 iterations)
       // Track both current and best energy to show funnel exploration
       if (iteration % 10 === 0) {
-        energyHistory.push({ 
-          iteration, 
-          energy: bestConformation.energy 
+        energyHistory.push({
+          iteration,
+          energy: bestConformation.energy
         });
       }
 
@@ -98,27 +98,27 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   private generateNeighbor(conformation: Conformation): Conformation {
     // Try multiple attempts to generate a valid neighbor
     const maxAttempts = 10;
-    
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const newDirections = [...conformation.directions];
       const randomIndex = Math.floor(Math.random() * newDirections.length);
-      const possibleDirections: Direction[] = ["L", "R", "U", "D"];
-      
+      const possibleDirections: Direction[] = this.possibleDirections;
+
       // Choose a different direction
       const currentDirection = newDirections[randomIndex];
       const availableDirections = possibleDirections.filter(d => d !== currentDirection);
       const newDirection = availableDirections[Math.floor(Math.random() * availableDirections.length)];
-      
+
       newDirections[randomIndex] = newDirection;
-      
+
       const neighbor = EnergyCalculator.createConformation(this.sequence, newDirections);
-      
+
       // If we found a valid neighbor, return it
       if (neighbor.energy !== Number.POSITIVE_INFINITY || attempt === maxAttempts - 1) {
         return neighbor;
       }
     }
-    
+
     // Fallback: return the original conformation
     return conformation;
   }
@@ -128,11 +128,11 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     if (currentEnergy === Number.POSITIVE_INFINITY && newEnergy === Number.POSITIVE_INFINITY) {
       return false; // Don't accept if both are invalid
     }
-    
+
     if (currentEnergy === Number.POSITIVE_INFINITY && newEnergy !== Number.POSITIVE_INFINITY) {
       return true; // Always accept valid solutions when current is invalid
     }
-    
+
     if (currentEnergy !== Number.POSITIVE_INFINITY && newEnergy === Number.POSITIVE_INFINITY) {
       // Accept invalid solutions with very low probability when current is valid
       if (temperature > 0) {
@@ -141,19 +141,19 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       }
       return false;
     }
-    
+
     // Both energies are finite - normal acceptance criterion
     // Always accept better solutions
     if (newEnergy < currentEnergy) {
       return true;
     }
-    
+
     // Accept worse solutions with probability based on temperature
     if (temperature > 0) {
       const acceptanceProbability = Math.exp((currentEnergy - newEnergy) / temperature);
       return Math.random() < acceptanceProbability;
     }
-    
+
     return false;
   }
 
@@ -163,7 +163,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     // This provides slower cooling that allows proper exploration
     const coolingFactor = Math.pow(this.finalTemperature / this.initialTemperature, iteration / this.maxIterations);
     const newTemperature = this.initialTemperature * coolingFactor;
-    
+
     // Ensure temperature doesn't go below final temperature
     return Math.max(newTemperature, this.finalTemperature);
   }
