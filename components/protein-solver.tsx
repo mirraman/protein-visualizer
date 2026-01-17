@@ -283,9 +283,11 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                 <Label>Lattice Type</Label>
                 <Select
                   value={latticeType}
-                  onValueChange={(value: "2D" | "3D") =>
-                    setLatticeType(value)
-                  }
+                  onValueChange={(value: "2D" | "3D") => {
+                    setLatticeType(value);
+                    setCurrentResult(null);
+                    setBestConformation(null);
+                  }}
                   disabled={isRunning}
                 >
                   <SelectTrigger>
