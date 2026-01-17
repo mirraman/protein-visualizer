@@ -14,12 +14,12 @@ type MongoDoc = {
 
 export function convertDocToObj(doc: MongoDoc | MongoDoc[] | null): any {
   if (!doc) return null;
-  
+
   // If it's an array, map over it
   if (Array.isArray(doc)) {
     return doc.map(item => convertDocToObj(item));
   }
-  
+
   // If it's a mongoose document, convert to plain object
   if (doc.toObject) {
     const obj = doc.toObject();
@@ -35,7 +35,7 @@ export function convertDocToObj(doc: MongoDoc | MongoDoc[] | null): any {
     });
     return obj;
   }
-  
+
   // If it's a plain object, process its properties
   if (typeof doc === 'object') {
     const obj = { ...doc };
@@ -49,7 +49,7 @@ export function convertDocToObj(doc: MongoDoc | MongoDoc[] | null): any {
     });
     return obj;
   }
-  
+
   return doc;
 }
 
@@ -60,17 +60,17 @@ export function convertDocToObj(doc: MongoDoc | MongoDoc[] | null): any {
  */
 export function parseDirections(directionsStr: string): Direction[] {
   if (!directionsStr) return [];
-  
+
   // Remove all spaces and commas, then convert to uppercase
   const cleanStr = directionsStr.replace(/[\s,]+/g, '').toUpperCase();
-  
+
   // Check if string contains only valid direction letters
-  const validPattern = /^[RUDL]+$/;
+  const validPattern = /^[RUDLFB]+$/;
   if (!validPattern.test(cleanStr)) {
     // If it contains any invalid characters (like words), return empty array
     return [];
   }
-  
+
   // Split into individual characters (all are guaranteed to be valid)
   return cleanStr.split('') as Direction[];
 }
@@ -92,6 +92,8 @@ export function directionToPosition(direction: Direction): { x: number; y: numbe
     case 'R': return { x: 1, y: 0, z: 0 };
     case 'U': return { x: 0, y: 1, z: 0 };
     case 'D': return { x: 0, y: -1, z: 0 };
+    case 'F': return { x: 0, y: 0, z: 1 };
+    case 'B': return { x: 0, y: 0, z: -1 };
     default: return { x: 1, y: 0, z: 0 };
   }
 }

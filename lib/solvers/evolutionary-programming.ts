@@ -97,7 +97,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
 
   private mutate(genes: Direction[]): Direction[] {
     const dirs = genes.slice();
-    const alphabet: Direction[] = ["L", "R", "U", "D"];
+    const alphabet: Direction[] = this.possibleDirections;
     for (let i = 0; i < dirs.length; i++) {
       if (Math.random() < this.mutationRate) {
         const current = dirs[i];
