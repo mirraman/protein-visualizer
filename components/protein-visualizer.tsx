@@ -53,7 +53,7 @@ const ProteinComparison = dynamic(
   { ssr: false, loading: () => null }
 );
 const ProteinSolver = dynamic(
-  () => import("@/components/protein-solver-refactored"),
+  () => import("@/components/protein-solver"),
   { ssr: false, loading: () => null }
 );
 const ExportOptions = dynamic(() => import("@/components/export-options"), {
