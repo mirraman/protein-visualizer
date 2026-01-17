@@ -641,7 +641,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
               </CardHeader>
               <CardContent>
                 <div ref={vizRef} className="h-48 bg-gray-50 rounded-md overflow-hidden">
-                  <Canvas>
+                  <Canvas gl={{ preserveDrawingBuffer: true }}>
                     <OrthographicCamera
                       makeDefault
                       position={[0, 0, 10]}

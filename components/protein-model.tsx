@@ -80,9 +80,12 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
     }
 
     // Force a strictly planar layout: all positions on the same Z=0 plane
-    // for (let i = 0; i < positions.length; i++) {
-    //   positions[i].z = 0;
-    // }
+    // Force a strictly planar layout: all positions on the same Z=0 plane
+    if (type === "2d") {
+      for (let i = 0; i < positions.length; i++) {
+        positions[i].z = 0;
+      }
+    }
 
     return { positions, bonds };
   }, [sequence, directions, type]);
