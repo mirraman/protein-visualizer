@@ -661,7 +661,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                     <ProteinModel
                       sequence={bestConformation.sequence}
                       directions={bestConformation.directions}
-                      type="3d"
+                      type={latticeType.toLowerCase() as "2d" | "3d"}
                     />
                   </Canvas>
                 </div>
