@@ -196,7 +196,7 @@ const ProteinVisualizer = () => {
       const parsedDirections = parseDirections(directions);
       if (parsedDirections.length === 0) {
         setError(
-          "Invalid direction format. Please use only letters R (Right), U (Up), D (Down), L (Left). Example: RUDL or R U D L"
+          "Invalid direction format. Please use only letters R (Right), U (Up), D (Down), L (Left), F (Forward), B (Backward). Example: RUDLFB or R U D L F B"
         );
         return;
       }
@@ -225,7 +225,7 @@ const ProteinVisualizer = () => {
     // Validate directions in real-time
     const parsedDirections = parseDirections(value);
     if (parsedDirections.length === 0) {
-      setDirectionsError("Invalid format. Use only letters R, U, D, L");
+      setDirectionsError("Invalid format. Use only letters R, U, D, L, F, B");
     } else {
       setDirectionsError("");
     }
@@ -701,14 +701,14 @@ const ProteinVisualizer = () => {
                     id="directions"
                     value={directions}
                     onChange={(e) => handleDirectionsChange(e.target.value)}
-                    placeholder="e.g., RUDL or R U D L"
+                    placeholder="e.g., RUDLFB or R U D L F B"
                     className={directionsError ? "border-red-500" : ""}
                   />
                   {directionsError ? (
                     <p className="text-sm text-red-500">{directionsError}</p>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      Use letters R (Right), U (Up), D (Down), L (Left).
+                      Use letters R (Right), U (Up), D (Down), L (Left), F (Forward), B (Backward).
                     </p>
                   )}
                 </div>

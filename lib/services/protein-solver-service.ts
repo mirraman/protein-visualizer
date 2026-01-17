@@ -215,7 +215,7 @@ export class ProteinSolverService {
   /**
    * Validate folding directions
    */
-  static validateDirections(directions: Direction[], sequenceLength: number): { isValid: boolean; errors: string[] } {
+  static validateDirections(directions: Direction[], sequenceLength: number, latticeType: '2D' | '3D' = '2D'): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
     
     if (!directions || directions.length === 0) {
@@ -226,7 +226,10 @@ export class ProteinSolverService {
       errors.push(`Expected ${sequenceLength - 1} directions for sequence of length ${sequenceLength}, got ${directions.length}`);
     }
     
-    const validDirections = ['R', 'U', 'D', 'L'];
+    // Include F/B for 3D lattice
+    const validDirections = latticeType === '3D' 
+      ? ['R', 'U', 'D', 'L', 'F', 'B'] 
+      : ['R', 'U', 'D', 'L'];
     const invalidDirections = directions.filter(d => !validDirections.includes(d));
     if (invalidDirections.length > 0) {
       errors.push(`Invalid directions found: ${[...new Set(invalidDirections)].join(', ')}`);
