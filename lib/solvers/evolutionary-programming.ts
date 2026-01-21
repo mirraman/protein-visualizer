@@ -1,56 +1,136 @@
+/**
+ * =============================================================================
+ * PROGRAMARE EVOLUTIVĂ (EP - Evolutionary Programming) PENTRU PLIEREA PROTEINELOR
+ * =============================================================================
+ * 
+ * Programarea Evolutivă a fost dezvoltată de Lawrence Fogel în anii 1960 pentru
+ * a evolua automate finite. Este un algoritm evolutiv similar cu ES.
+ * 
+ * DIFERENȚE FAȚĂ DE ALGORITMUL GENETIC:
+ * - NU folosește crossover (doar mutație) - ca la ES
+ * - NU folosește o reprezentare fixă a cromozomilor
+ * - Pune accent pe comportamentul fenotipic, nu pe reprezentarea genotipică
+ * 
+ * DIFERENȚE FAȚĂ DE EVOLUTION STRATEGIES:
+ * - ES a fost dezvoltat pentru optimizare cu parametri reali
+ * - EP a fost dezvoltat pentru a evolua comportamente/structuri
+ * - EP tradițional nu folosește auto-adaptare sigma (dar implementarea noastră o include)
+ * 
+ * PRINCIPIUL DE FUNCȚIONARE:
+ * 1. Inițializăm o populație de indivizi aleatoriu
+ * 2. Fiecare individ generează UN copil prin mutație
+ * 3. Selecție prin turnir: fiecare individ competiție cu alții aleatoriu selectați
+ * 4. Cei cu cele mai multe victorii supraviețuiesc
+ * 5. Repetăm pașii 2-4
+ * 
+ * SELECȚIE TURNIR STOCHASTICĂ:
+ * - Fiecare individ (părinte și copil) "luptă" cu q indivizi aleatoriu
+ * - Câștigă un punct pentru fiecare adversar mai slab decât el
+ * - Cei cu cele mai multe puncte sunt selectați
+ * 
+ * NOTĂ: Implementarea noastră simplificată folosește:
+ * - Elitism: păstrăm cei mai buni indivizi direct
+ * - Selecție turnir standard pentru alegerea părinților
+ * =============================================================================
+ */
+
 import { EnergyCalculator } from "./energy-calculator";
 import { BaseSolver, type SolverResult, type Conformation, type EvolutionaryProgrammingParameters } from "./types";
 import type { Direction } from "../types";
 
+/**
+ * Tipul Individual pentru EP
+ */
 type Individual = {
-  directions: Direction[];
-  energy: number;
+  directions: Direction[];  // Conformația - secvența de direcții
+  energy: number;           // Fitness-ul - energia
 };
 
+/**
+ * Clasa EvolutionaryProgrammingSolver - Implementează Programarea Evolutivă
+ */
 export class EvolutionaryProgrammingSolver extends BaseSolver {
+  // Dimensiunea populației
   private populationSize: number;
+  
+  // Rata de mutație - probabilitatea de a schimba o direcție
   private mutationRate: number;
+  
+  // Dimensiunea turnirului pentru selecție
   private tournamentSize: number;
+  
+  // Numărul de indivizi de elită păstrați direct
   private eliteCount: number;
+  
+  // Populația curentă
   private population: Individual[] = [];
 
+  /**
+   * Constructor - Inițializează parametrii EP
+   */
   constructor(parameters: EvolutionaryProgrammingParameters) {
     super(parameters);
-    this.populationSize = parameters.populationSize;
-    this.mutationRate = parameters.mutationRate;
-    this.tournamentSize = parameters.tournamentSize;
-    this.eliteCount = parameters.eliteCount ?? 2;
+    this.populationSize = parameters.populationSize;      // Ex: 50 indivizi
+    this.mutationRate = parameters.mutationRate;          // Ex: 0.15 (15%)
+    this.tournamentSize = parameters.tournamentSize;      // Ex: 3
+    this.eliteCount = parameters.eliteCount ?? 2;         // Ex: 2 indivizi de elită
   }
 
+  /**
+   * METODA PRINCIPALĂ - Rulează algoritmul de Programare Evolutivă
+   */
   async solve(): Promise<SolverResult> {
     const startTime = Date.now();
     const energyHistory: { iteration: number; energy: number }[] = [];
 
-    // Initialize population
+    // PASUL 1: INIȚIALIZARE - Creăm populația inițială aleatorie
     this.population = this.initializePopulation();
+    
+    // Găsim cel mai bun individ
     let best = this.getBest();
     energyHistory.push({ iteration: 0, energy: best.energy });
 
+    // Intervalele pentru logging
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
     const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
 
+    // BUCLA PRINCIPALĂ - Evoluție
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
 
+      // PASUL 2: ELITISM - Copiem cei mai buni indivizi direct
       const next: Individual[] = this.getElites(this.eliteCount);
+      
+      // PASUL 3: Creăm restul populației prin selecție și mutație
       while (next.length < this.populationSize) {
+        // SELECȚIE: Alegem un părinte prin turnir
         const parent = this.tournamentSelect();
+        
+        // MUTAȚIE: Creăm un copil prin mutația părintelui
         const childDirs = this.mutate(parent.directions);
+        
+        // EVALUARE: Calculăm fitness-ul copilului
         const child: Individual = {
           directions: childDirs,
           energy: EnergyCalculator.calculateEnergy(this.sequence, childDirs)
         };
+        
+        // Adăugăm copilul în noua generație
         next.push(child);
       }
+      
+      // Înlocuim populația cu noua generație
       this.population = next;
+      
+      // Găsim cel mai bun din noua generație
       const currentBest = this.getBest();
-      if (currentBest.energy < best.energy) best = currentBest;
+      
+      // Actualizăm cel mai bun global
+      if (currentBest.energy < best.energy) {
+        best = currentBest;
+      }
 
+      // Logging și UI
       if (iteration % logInterval === 0) {
         energyHistory.push({ iteration, energy: best.energy });
         this.onProgress?.({
@@ -66,6 +146,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
       }
     }
 
+    // Construim rezultatul final
     const endTime = Date.now();
     const bestConformation: Conformation = {
       sequence: this.sequence,
@@ -84,43 +165,87 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
     };
   }
 
+  /**
+   * Inițializează populația cu indivizi aleatorii
+   */
   private initializePopulation(): Individual[] {
     const arr: Individual[] = [];
+    
     for (let i = 0; i < this.populationSize; i++) {
+      // Generăm direcții aleatorii
       const d = this.generateRandomDirections();
-      arr.push({ directions: d, energy: EnergyCalculator.calculateEnergy(this.sequence, d) });
+      // Calculăm energia și creăm individul
+      arr.push({ 
+        directions: d, 
+        energy: EnergyCalculator.calculateEnergy(this.sequence, d) 
+      });
     }
+    
     return arr;
   }
 
+  /**
+   * SELECȚIE TURNIR
+   * Alegem tournamentSize indivizi aleatoriu, cel mai bun câștigă
+   */
   private tournamentSelect(): Individual {
     const picks: Individual[] = [];
+    
+    // Selectăm tournamentSize indivizi aleatoriu
     for (let i = 0; i < this.tournamentSize; i++) {
-      picks.push(this.population[Math.floor(Math.random() * this.population.length)]);
+      const randomIndex = Math.floor(Math.random() * this.population.length);
+      picks.push(this.population[randomIndex]);
     }
+    
+    // Returnăm cel mai bun din turnir
     return picks.reduce((b, c) => (c.energy < b.energy ? c : b), picks[0]);
   }
 
+  /**
+   * MUTAȚIE
+   * Pentru fiecare direcție, cu probabilitate mutationRate, o schimbăm
+   * 
+   * În EP tradițional, mutația e adesea Gaussiană pentru valori continue.
+   * Pentru reprezentarea noastră discretă (direcții), folosim mutație uniformă.
+   * 
+   * @param genes - Secvența de direcții a părintelui
+   * @returns Direction[] - Secvența mutată pentru copil
+   */
   private mutate(genes: Direction[]): Direction[] {
+    // Copiem direcțiile părintelui
     const dirs = genes.slice();
+    
+    // Alfabetul de direcții posibile
     const alphabet: Direction[] = this.possibleDirections;
+    
+    // Pentru fiecare direcție
     for (let i = 0; i < dirs.length; i++) {
+      // Cu probabilitate mutationRate
       if (Math.random() < this.mutationRate) {
+        // Schimbăm direcția cu alta diferită
         const current = dirs[i];
         const choices = alphabet.filter(d => d !== current);
         dirs[i] = choices[Math.floor(Math.random() * choices.length)];
       }
     }
+    
     return dirs as Direction[];
   }
 
+  /**
+   * ELITISM - Selectează cei mai buni k indivizi
+   */
   private getElites(k: number): Individual[] {
-    return [...this.population].sort((a, b) => a.energy - b.energy).slice(0, Math.min(k, this.population.length));
+    // Sortăm după energie și luăm primii k
+    return [...this.population]
+      .sort((a, b) => a.energy - b.energy)
+      .slice(0, Math.min(k, this.population.length));
   }
 
+  /**
+   * Găsește cel mai bun individ din populație
+   */
   private getBest(): Individual {
     return this.population.reduce((b, c) => (c.energy < b.energy ? c : b), this.population[0]);
   }
 }
-
-
