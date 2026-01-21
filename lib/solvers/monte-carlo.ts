@@ -5,7 +5,7 @@ import { EnergyCalculator } from "./energy-calculator";
 export class MonteCarloSolver extends BaseSolver {
   private populationSize: number;
   private population: Conformation[] = [];
-  private sampledConformations: Conformation[] = [];
+  private totalSampledCount: number = 0;
 
   constructor(parameters: MonteCarloParameters) {
     super(parameters);
@@ -24,6 +24,9 @@ export class MonteCarloSolver extends BaseSolver {
 
     energyHistory.push({ iteration: 0, energy: averageEnergy });
 
+    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
+    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
+
     // Monte Carlo sampling - focus on exploration, not optimization
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       // Check if solver was stopped
@@ -41,17 +44,15 @@ export class MonteCarloSolver extends BaseSolver {
       }
 
       // Record energy statistics (average energy of population, not just best)
-      if (iteration % 10 === 0) {
+      if (iteration % logInterval === 0) {
         averageEnergy = this.getAverageEnergy();
         energyHistory.push({
           iteration,
-          energy: averageEnergy  // Track population average, not just best
+          energy: averageEnergy
         });
-      }
 
-      // Progress callback
-      if (this.onProgress && iteration % 10 === 0) {
-        this.onProgress({
+        // Progress update synced with logging
+        this.onProgress?.({
           iteration,
           currentEnergy: averageEnergy,
           bestEnergy: bestConformation.energy,
@@ -60,8 +61,8 @@ export class MonteCarloSolver extends BaseSolver {
       }
 
       // Allow UI updates
-      if (iteration % 100 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 1));
+      if (iteration % yieldInterval === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
 
@@ -77,12 +78,14 @@ export class MonteCarloSolver extends BaseSolver {
 
   private initializePopulation(): void {
     this.population = [];
+    this.totalSampledCount = 0;
 
     for (let i = 0; i < this.populationSize; i++) {
       const directions = this.generateRandomDirections();
       const conformation = EnergyCalculator.createConformation(this.sequence, directions);
       this.population.push(conformation);
     }
+    this.totalSampledCount = this.populationSize;
   }
 
   private performSamplingIteration(): void {
@@ -99,8 +102,9 @@ export class MonteCarloSolver extends BaseSolver {
 
     // Generate samples by mutating existing good conformations
     const mutationCount = Math.floor(this.populationSize * 0.3); // 30% mutations
-    const sortedPopulation = [...this.population].sort((a, b) => a.energy - b.energy);
-    const topHalf = sortedPopulation.slice(0, Math.floor(this.populationSize / 2));
+    const topHalf = [...this.population]
+      .sort((a, b) => a.energy - b.energy)
+      .slice(0, Math.floor(this.populationSize / 2));
 
     for (let i = 0; i < mutationCount; i++) {
       const parent = topHalf[Math.floor(Math.random() * topHalf.length)];
@@ -110,9 +114,8 @@ export class MonteCarloSolver extends BaseSolver {
 
     // Add new samples to population and keep diverse set
     this.population.push(...newSamples);
-    this.sampledConformations.push(...newSamples);
+    this.totalSampledCount += newSamples.length;
 
-    // Maintain population size by keeping diverse conformations
     this.maintainPopulationDiversity();
   }
 
@@ -158,6 +161,7 @@ export class MonteCarloSolver extends BaseSolver {
   }
 
   private getBestConformation(): Conformation {
+    if (this.population.length === 0) return { sequence: this.sequence, directions: [], energy: 0, positions: [] };
     return this.population.reduce((best, current) =>
       current.energy < best.energy ? current : best
     );
@@ -171,52 +175,46 @@ export class MonteCarloSolver extends BaseSolver {
     return totalEnergy / validConformations.length;
   }
 
-  /**
-   * Get the current population for analysis
-   */
   getPopulation(): Conformation[] {
     return [...this.population];
   }
 
   /**
-   * Get all sampled conformations (for analysis of sampling coverage)
+   * Returns empty array now to save memory, or could return just the current population
+   * @deprecated logic changed for performance
    */
   getAllSampledConformations(): Conformation[] {
-    return [...this.sampledConformations];
+    console.warn("getAllSampledConformations returns only current population in high-performance mode");
+    return [...this.population];
   }
 
-  /**
-   * Get population statistics
-   */
-  getPopulationStats(): {
-    bestEnergy: number;
-    worstEnergy: number;
-    averageEnergy: number;
-    validConformations: number;
-    totalSampled: number;
-    diversityScore: number;
-  } {
-    const validConformations = this.population.filter(c => c.energy !== Number.POSITIVE_INFINITY);
-    const energies = validConformations.map(c => c.energy);
+  getPopulationStats() {
+    const valid = this.population.filter(c => c.energy !== Number.POSITIVE_INFINITY);
+    const energies = valid.map(c => c.energy);
 
-    // Calculate diversity as standard deviation of energies
+    // Handle edge case of no valid conformations
+    if (energies.length === 0) {
+      return {
+        bestEnergy: 0, worstEnergy: 0, averageEnergy: 0,
+        validConformations: 0, totalSampled: this.totalSampledCount, diversityScore: 0
+      };
+    }
+
     const avgEnergy = energies.reduce((sum, e) => sum + e, 0) / energies.length;
     const variance = energies.reduce((sum, e) => sum + Math.pow(e - avgEnergy, 2), 0) / energies.length;
-    const diversityScore = Math.sqrt(variance);
 
     return {
       bestEnergy: Math.min(...energies),
       worstEnergy: Math.max(...energies),
       averageEnergy: avgEnergy,
-      validConformations: validConformations.length,
-      totalSampled: this.sampledConformations.length,
-      diversityScore
+      validConformations: valid.length,
+      // Use the counter here
+      totalSampled: this.totalSampledCount,
+      diversityScore: Math.sqrt(variance)
     };
   }
 
-  /**
-   * Get energy distribution histogram for analysis
-   */
+  // getEnergyDistribution remains the same as it uses this.population
   getEnergyDistribution(bins: number = 10): { energy: number; count: number }[] {
     const validConformations = this.population.filter(c => c.energy !== Number.POSITIVE_INFINITY);
     const energies = validConformations.map(c => c.energy);
@@ -225,17 +223,19 @@ export class MonteCarloSolver extends BaseSolver {
 
     const minEnergy = Math.min(...energies);
     const maxEnergy = Math.max(...energies);
-    const binSize = (maxEnergy - minEnergy) / bins;
+    // Avoid division by zero if all energies are the same
+    const binSize = maxEnergy === minEnergy ? 1 : (maxEnergy - minEnergy) / bins;
 
     const histogram: { energy: number; count: number }[] = [];
 
     for (let i = 0; i < bins; i++) {
       const binStart = minEnergy + i * binSize;
       const binEnd = binStart + binSize;
-      const count = energies.filter(e => e >= binStart && e < binEnd).length;
+      // For the last bin, include the max value
+      const count = energies.filter(e => e >= binStart && (i === bins - 1 ? e <= binEnd : e < binEnd)).length;
 
       histogram.push({
-        energy: binStart + binSize / 2, // Bin center
+        energy: binStart + binSize / 2,
         count
       });
     }

@@ -27,6 +27,9 @@ export class SimulatedAnnealingSolver extends BaseSolver {
 
     energyHistory.push({ iteration: 0, energy: currentConformation.energy });
 
+    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
+    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
+
     // Simulated Annealing optimization
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       // Check if solver was stopped
@@ -50,18 +53,15 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       // Cool down temperature
       temperature = this.updateTemperature(temperature, iteration);
 
-      // Record energy history (sample every 10 iterations)
-      // Track both current and best energy to show funnel exploration
-      if (iteration % 10 === 0) {
+      // Record energy history with adaptive sampling
+      if (iteration % logInterval === 0) {
         energyHistory.push({
           iteration,
           energy: bestConformation.energy
         });
-      }
 
-      // Progress callback
-      if (this.onProgress && iteration % 10 === 0) {
-        this.onProgress({
+        // Progress callback synced with logging
+        this.onProgress?.({
           iteration,
           currentEnergy: currentConformation.energy,
           bestEnergy: bestConformation.energy,
@@ -70,8 +70,8 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       }
 
       // Allow UI updates
-      if (iteration % 100 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 1));
+      if (iteration % yieldInterval === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
       }
 
       // Early termination if temperature is too low

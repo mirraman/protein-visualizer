@@ -106,6 +106,9 @@ export class GeneticProgrammingSolver extends BaseSolver {
     let best = this.evaluatePopulationAndGetBest();
     energyHistory.push({ iteration: 0, energy: best.energy });
 
+    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
+    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
+
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
       const next: Program[] = this.getElitesPrograms(this.eliteCount);
@@ -128,9 +131,12 @@ export class GeneticProgrammingSolver extends BaseSolver {
       const currentBest = this.evaluatePopulationAndGetBest();
       if (currentBest.energy < best.energy) best = currentBest;
 
-      if (iteration % 10 === 0) {
+      if (iteration % logInterval === 0) {
         energyHistory.push({ iteration, energy: best.energy });
         this.onProgress?.({ iteration, currentEnergy: currentBest.energy, bestEnergy: best.energy, progress: (iteration / this.maxIterations) * 100 });
+      }
+
+      if (iteration % yieldInterval === 0) {
         await new Promise(r => setTimeout(r, 0));
       }
     }

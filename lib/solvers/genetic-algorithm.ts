@@ -36,6 +36,9 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     let best = this.getBestIndividual();
     energyHistory.push({ iteration: 0, energy: best.energy });
 
+    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
+    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
+
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
 
@@ -71,16 +74,17 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       const currentBest = this.getBestIndividual();
       if (currentBest.energy < best.energy) best = currentBest;
 
-      if (iteration % 10 === 0) {
+      if (iteration % logInterval === 0) {
         energyHistory.push({ iteration, energy: best.energy });
-        if (this.onProgress) {
-          this.onProgress({
-            iteration,
-            currentEnergy: currentBest.energy,
-            bestEnergy: best.energy,
-            progress: (iteration / this.maxIterations) * 100
-          });
-        }
+        this.onProgress?.({
+          iteration,
+          currentEnergy: currentBest.energy,
+          bestEnergy: best.energy,
+          progress: (iteration / this.maxIterations) * 100
+        });
+      }
+
+      if (iteration % yieldInterval === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
 
