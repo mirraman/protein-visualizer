@@ -1,39 +1,3 @@
-/**
- * =============================================================================
- * PROGRAMARE EVOLUTIVĂ (EP - Evolutionary Programming) PENTRU PLIEREA PROTEINELOR
- * =============================================================================
- * 
- * Programarea Evolutivă a fost dezvoltată de Lawrence Fogel în anii 1960 pentru
- * a evolua automate finite. Este un algoritm evolutiv similar cu ES.
- * 
- * DIFERENȚE FAȚĂ DE ALGORITMUL GENETIC:
- * - NU folosește crossover (doar mutație) - ca la ES
- * - NU folosește o reprezentare fixă a cromozomilor
- * - Pune accent pe comportamentul fenotipic, nu pe reprezentarea genotipică
- * 
- * DIFERENȚE FAȚĂ DE EVOLUTION STRATEGIES:
- * - ES a fost dezvoltat pentru optimizare cu parametri reali
- * - EP a fost dezvoltat pentru a evolua comportamente/structuri
- * - EP tradițional nu folosește auto-adaptare sigma (dar implementarea noastră o include)
- * 
- * PRINCIPIUL DE FUNCȚIONARE:
- * 1. Inițializăm o populație de indivizi aleatoriu
- * 2. Fiecare individ generează UN copil prin mutație
- * 3. Selecție prin turnir: fiecare individ competiție cu alții aleatoriu selectați
- * 4. Cei cu cele mai multe victorii supraviețuiesc
- * 5. Repetăm pașii 2-4
- * 
- * SELECȚIE TURNIR STOCHASTICĂ:
- * - Fiecare individ (părinte și copil) "luptă" cu q indivizi aleatoriu
- * - Câștigă un punct pentru fiecare adversar mai slab decât el
- * - Cei cu cele mai multe puncte sunt selectați
- * 
- * NOTĂ: Implementarea noastră simplificată folosește:
- * - Elitism: păstrăm cei mai buni indivizi direct
- * - Selecție turnir standard pentru alegerea părinților
- * =============================================================================
- */
-
 import { EnergyCalculator } from "./energy-calculator";
 import { BaseSolver, type SolverResult, type Conformation, type EvolutionaryProgrammingParameters } from "./types";
 import type { Direction } from "../types";
@@ -52,16 +16,16 @@ type Individual = {
 export class EvolutionaryProgrammingSolver extends BaseSolver {
   // Dimensiunea populației
   private populationSize: number;
-  
+
   // Rata de mutație - probabilitatea de a schimba o direcție
   private mutationRate: number;
-  
+
   // Dimensiunea turnirului pentru selecție
   private tournamentSize: number;
-  
+
   // Numărul de indivizi de elită păstrați direct
   private eliteCount: number;
-  
+
   // Populația curentă
   private population: Individual[] = [];
 
@@ -85,7 +49,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
 
     // PASUL 1: INIȚIALIZARE - Creăm populația inițială aleatorie
     this.population = this.initializePopulation();
-    
+
     // Găsim cel mai bun individ
     let best = this.getBest();
     energyHistory.push({ iteration: 0, energy: best.energy });
@@ -100,31 +64,31 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
 
       // PASUL 2: ELITISM - Copiem cei mai buni indivizi direct
       const next: Individual[] = this.getElites(this.eliteCount);
-      
+
       // PASUL 3: Creăm restul populației prin selecție și mutație
       while (next.length < this.populationSize) {
         // SELECȚIE: Alegem un părinte prin turnir
         const parent = this.tournamentSelect();
-        
+
         // MUTAȚIE: Creăm un copil prin mutația părintelui
         const childDirs = this.mutate(parent.directions);
-        
+
         // EVALUARE: Calculăm fitness-ul copilului
         const child: Individual = {
           directions: childDirs,
           energy: EnergyCalculator.calculateEnergy(this.sequence, childDirs)
         };
-        
+
         // Adăugăm copilul în noua generație
         next.push(child);
       }
-      
+
       // Înlocuim populația cu noua generație
       this.population = next;
-      
+
       // Găsim cel mai bun din noua generație
       const currentBest = this.getBest();
-      
+
       // Actualizăm cel mai bun global
       if (currentBest.energy < best.energy) {
         best = currentBest;
@@ -151,9 +115,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
-      positions: (EnergyCalculator as any).calculatePositions
-        ? (EnergyCalculator as any).calculatePositions(this.sequence, best.directions)
-        : [],
+      positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
       energy: best.energy
     };
 
@@ -170,17 +132,17 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
    */
   private initializePopulation(): Individual[] {
     const arr: Individual[] = [];
-    
+
     for (let i = 0; i < this.populationSize; i++) {
       // Generăm direcții aleatorii
       const d = this.generateRandomDirections();
       // Calculăm energia și creăm individul
-      arr.push({ 
-        directions: d, 
-        energy: EnergyCalculator.calculateEnergy(this.sequence, d) 
+      arr.push({
+        directions: d,
+        energy: EnergyCalculator.calculateEnergy(this.sequence, d)
       });
     }
-    
+
     return arr;
   }
 
@@ -190,13 +152,13 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
    */
   private tournamentSelect(): Individual {
     const picks: Individual[] = [];
-    
+
     // Selectăm tournamentSize indivizi aleatoriu
     for (let i = 0; i < this.tournamentSize; i++) {
       const randomIndex = Math.floor(Math.random() * this.population.length);
       picks.push(this.population[randomIndex]);
     }
-    
+
     // Returnăm cel mai bun din turnir
     return picks.reduce((b, c) => (c.energy < b.energy ? c : b), picks[0]);
   }
@@ -214,10 +176,10 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
   private mutate(genes: Direction[]): Direction[] {
     // Copiem direcțiile părintelui
     const dirs = genes.slice();
-    
+
     // Alfabetul de direcții posibile
     const alphabet: Direction[] = this.possibleDirections;
-    
+
     // Pentru fiecare direcție
     for (let i = 0; i < dirs.length; i++) {
       // Cu probabilitate mutationRate
@@ -228,7 +190,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
         dirs[i] = choices[Math.floor(Math.random() * choices.length)];
       }
     }
-    
+
     return dirs as Direction[];
   }
 

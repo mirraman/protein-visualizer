@@ -1,35 +1,3 @@
-/**
- * =============================================================================
- * STRATEGII EVOLUTIVE (ES - Evolution Strategies) PENTRU PLIEREA PROTEINELOR
- * =============================================================================
- * 
- * Strategiile Evolutive sunt o familie de algoritmi evolutivi dezvoltați în
- * Germania în anii 1960 de Rechenberg și Schwefel pentru optimizare.
- * 
- * DIFERENȚE FAȚĂ DE ALGORITMUL GENETIC:
- * - NU folosește crossover (doar mutație)
- * - Auto-adaptează rata de mutație (sigma) în timpul execuției
- * - Folosește notația (μ, λ) sau (μ + λ) pentru selecție
- * 
- * NOTAȚIA (μ + λ):
- * - μ (mu) = numărul de părinți
- * - λ (lambda) = numărul de copii generați
- * - "+" înseamnă că părinții și copiii competiție pentru locurile din generația următoare
- * - "," înseamnă că doar copiii sunt considerați (părinții mor)
- * 
- * PRINCIPIUL DE FUNCȚIONARE:
- * 1. Inițializăm μ părinți aleatoriu
- * 2. Generăm λ copii prin mutație (fiecare copil = un părinte mutat)
- * 3. Selectăm cei mai buni μ indivizi din (părinți + copii)
- * 4. Adaptăm sigma (rata de mutație) bazat pe succesul căutării
- * 5. Repetăm pașii 2-4
- * 
- * AUTO-ADAPTARE SIGMA (REGULA 1/5):
- * - Dacă mai mult de 1/5 din mutații sunt de succes -> crește sigma (explorează mai mult)
- * - Dacă mai puțin de 1/5 -> scade sigma (exploatează zona curentă)
- * =============================================================================
- */
-
 import { EnergyCalculator } from "./energy-calculator";
 import { BaseSolver, type SolverResult, type Conformation, type EvolutionStrategiesParameters } from "./types";
 import type { Direction } from "../types";
@@ -50,22 +18,22 @@ type Individual = {
 export class EvolutionStrategiesSolver extends BaseSolver {
   // μ (mu) - numărul de părinți
   private mu: number;
-  
+
   // λ (lambda) - numărul de copii generați per generație
   private lambda: number;
-  
+
   // σ (sigma) - rata globală de mutație
   private sigma: number;
-  
+
   // Factorul de reducere a sigma când găsim îmbunătățiri
   private mutationDecay: number;
-  
+
   // Factorul de creștere a sigma când stagnăm
   private mutationBoost: number;
-  
+
   // Numărul de generații fără îmbunătățire înainte de a crește sigma
   private stagnationWindow: number;
-  
+
   // Dacă folosim (μ + λ) sau (μ, λ)
   // true = (μ + λ): părinții competiție cu copiii
   // false = (μ, λ): doar copiii sunt considerați
@@ -97,12 +65,12 @@ export class EvolutionStrategiesSolver extends BaseSolver {
 
     // PASUL 1: Inițializăm μ părinți aleatoriu
     this.parents = this.initializeParents();
-    
+
     // Găsim cel mai bun părinte
     let best = this.getBest(this.parents);
     let bestEnergySoFar = best.energy;  // Pentru detectarea stagnării
     let stagnation = 0;                  // Contor de stagnare
-    
+
     energyHistory.push({ iteration: 0, energy: best.energy });
 
     // Intervalele pentru logging
@@ -125,19 +93,19 @@ export class EvolutionStrategiesSolver extends BaseSolver {
 
       // PASUL 3: SELECȚIE
       // Creăm pool-ul de selecție (depinde de tipul ES)
-      const pool = this.plusSelection 
+      const pool = this.plusSelection
         ? this.parents.concat(offspring)  // (μ + λ): părinți + copii
         : offspring;                       // (μ, λ): doar copii
-      
+
       // Sortăm după fitness (energie crescătoare)
       pool.sort((a, b) => a.energy - b.energy);
-      
+
       // Selectăm cei mai buni μ indivizi ca noii părinți
       this.parents = pool.slice(0, this.mu);
 
       // Cel mai bun din generația curentă
       const currentBest = this.parents[0];
-      
+
       // Actualizăm cel mai bun global
       if (currentBest.energy < best.energy) {
         best = currentBest;
@@ -149,13 +117,13 @@ export class EvolutionStrategiesSolver extends BaseSolver {
         // Am găsit ceva mai bun!
         bestEnergySoFar = best.energy;
         stagnation = 0;  // Resetăm contorul de stagnare
-        
+
         // REDUCEM sigma - suntem într-o zonă bună, explorăm mai fin
         this.sigma = Math.max(0.01, this.sigma * this.mutationDecay);
       } else {
         // Nu am găsit îmbunătățire
         stagnation++;
-        
+
         // Dacă am stagnat prea mult
         if (stagnation >= this.stagnationWindow) {
           // CREȘTEM sigma - trebuie să explorăm mai mult
@@ -185,9 +153,7 @@ export class EvolutionStrategiesSolver extends BaseSolver {
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
-      positions: (EnergyCalculator as any).calculatePositions
-        ? (EnergyCalculator as any).calculatePositions(this.sequence, best.directions)
-        : [],
+      positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
       energy: best.energy
     };
 
@@ -205,7 +171,7 @@ export class EvolutionStrategiesSolver extends BaseSolver {
    */
   private initializeParents(): Individual[] {
     const arr: Individual[] = [];
-    
+
     for (let i = 0; i < this.mu; i++) {
       // Generăm direcții aleatorii
       const directions = this.generateRandomDirections();
@@ -214,7 +180,7 @@ export class EvolutionStrategiesSolver extends BaseSolver {
       // Creăm individul cu sigma inițial
       arr.push({ directions, energy, sigma: this.sigma });
     }
-    
+
     return arr;
   }
 
@@ -232,13 +198,13 @@ export class EvolutionStrategiesSolver extends BaseSolver {
   private mutate(ind: Individual): Individual {
     // Alfabetul de direcții posibile
     const alphabet: Direction[] = this.possibleDirections;
-    
+
     // Copiem direcțiile părintelui
     const dirs = ind.directions.slice();
-    
+
     // Folosim rata de mutație a părintelui
     const rate = ind.sigma;
-    
+
     // Aplicăm mutații pe fiecare genă
     for (let i = 0; i < dirs.length; i++) {
       // Cu probabilitate rate, mutăm gena
@@ -249,15 +215,15 @@ export class EvolutionStrategiesSolver extends BaseSolver {
         dirs[i] = choices[Math.floor(Math.random() * choices.length)];
       }
     }
-    
+
     // Calculăm energia noii conformații
     const energy = EnergyCalculator.calculateEnergy(this.sequence, dirs);
-    
+
     // AUTO-ADAPTARE: Copilul își ajustează propriul sigma
     // Variație aleatorie între 0.9 și 1.1 * sigma părinte
     // Aceasta permite evoluția parametrilor de mutație împreună cu soluțiile
     const childSigma = Math.min(0.5, Math.max(0.01, rate * (0.9 + Math.random() * 0.2)));
-    
+
     return { directions: dirs, energy, sigma: childSigma };
   }
 

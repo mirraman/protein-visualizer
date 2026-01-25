@@ -1,40 +1,3 @@
-/**
- * =============================================================================
- * PROGRAMARE GENETICĂ (GP - Genetic Programming) PENTRU PLIEREA PROTEINELOR
- * =============================================================================
- * 
- * Programarea Genetică a fost dezvoltată de John Koza în anii 1990 pentru
- * a evolua programe de calculator automat (arbori de expresii).
- * 
- * DIFERENȚE FAȚĂ DE ALGORITMUL GENETIC:
- * - GA: Cromozomi de lungime fixă (șiruri de biți sau valori)
- * - GP: Structuri de lungime variabilă (tradițional arbori, dar și secvențe)
- * 
- * În GP tradițional:
- * - Indivizii sunt ARBORI de expresii (programe)
- * - Crossover: schimbăm subarbori între părinți
- * - Mutație: înlocuim subarbori cu noi subarbori aleatorii
- * 
- * ADAPTAREA NOASTRĂ PENTRU PLIEREA PROTEINELOR:
- * - Indivizii sunt secvențe de direcții (similar cu GA)
- * - Folosim operatori GP-stilizați:
- *   - Crossover multi-punct (nu doar un punct ca la GA)
- *   - Mutație prin înlocuire de segment (nu doar un punct)
- * 
- * OPERATORI GP:
- * 1. CROSSOVER MULTI-PUNCT: 2-4 puncte de tăiere, schimbăm segmente alternativ
- * 2. MUTAȚIE DE SEGMENT: Înlocuim un segment întreg cu valori noi
- * 3. MUTAȚIE PUNCT: Schimbăm direcții individuale (ca la GA)
- * 
- * PRINCIPIUL DE FUNCȚIONARE:
- * 1. Inițializăm populația cu "programe" (secvențe de direcții) aleatorii
- * 2. Evaluăm fitness-ul fiecărui program (energia conformației)
- * 3. Selecție prin turnir
- * 4. Aplicăm crossover și mutație GP-style
- * 5. Repetăm pașii 2-4
- * =============================================================================
- */
-
 import { EnergyCalculator } from "./energy-calculator";
 import { BaseSolver, type SolverResult, type Conformation, type GeneticProgrammingParameters } from "./types";
 import type { Direction } from "../types";
@@ -85,7 +48,7 @@ function createRandomProgram(length: number, possibleDirections: Direction[]): P
  */
 function gpCrossover(a: Program, b: Program): [Program, Program] {
   const len = Math.min(a.directions.length, b.directions.length);
-  
+
   // Dacă programele sunt prea scurte, nu facem crossover
   if (len < 3) {
     return [{ directions: a.directions.slice() }, { directions: b.directions.slice() }];
@@ -142,7 +105,7 @@ function gpMutate(prog: Program, mutationRate: number, possibleDirections: Direc
     const start = Math.floor(Math.random() * (len - 2));
     // Lungimea segmentului: 1-4 gene
     const segLen = 1 + Math.floor(Math.random() * Math.min(4, len - start));
-    
+
     // Înlocuim segmentul cu direcții noi aleatorii
     for (let i = start; i < start + segLen; i++) {
       dirs[i] = randomDirection(possibleDirections);
@@ -168,22 +131,22 @@ function gpMutate(prog: Program, mutationRate: number, possibleDirections: Direc
 export class GeneticProgrammingSolver extends BaseSolver {
   // Dimensiunea populației
   private populationSize: number;
-  
+
   // Adâncimea maximă a "arborelui" (pentru GP tradițional, aici nu e folosit)
   private maxTreeDepth: number;
-  
+
   // Rata de crossover
   private crossoverRate: number;
-  
+
   // Rata de mutație
   private mutationRate: number;
-  
+
   // Numărul de indivizi de elită
   private eliteCount: number;
-  
+
   // Dimensiunea turnirului
   private tournamentSize: number;
-  
+
   // Numărul de evaluări per individ (pentru robustețe, opțional)
   private rolloutCount: number;
 
@@ -210,7 +173,7 @@ export class GeneticProgrammingSolver extends BaseSolver {
   async solve(): Promise<SolverResult> {
     const start = Date.now();
     const energyHistory: { iteration: number; energy: number }[] = [];
-    
+
     // PASUL 1: Inițializăm populația cu programe aleatorii
     this.population = this.initializePopulation();
 
@@ -225,7 +188,7 @@ export class GeneticProgrammingSolver extends BaseSolver {
     // BUCLA PRINCIPALĂ - Evoluție
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
-      
+
       // PASUL 2: ELITISM - Păstrăm cele mai bune programe
       const next: Program[] = this.getElitesPrograms(this.eliteCount);
 
@@ -234,9 +197,9 @@ export class GeneticProgrammingSolver extends BaseSolver {
         // SELECȚIE: Alegem doi părinți prin turnir
         const a = this.tournamentSelect();
         const b = this.tournamentSelect();
-        
+
         // CROSSOVER GP: Cu probabilitate crossoverRate, aplicăm crossover multi-punct
-        let [childA, childB] = Math.random() < this.crossoverRate 
+        let [childA, childB] = Math.random() < this.crossoverRate
           ? gpCrossover(a, b)
           : [{ directions: a.directions.slice() }, { directions: b.directions.slice() }];
 
@@ -257,10 +220,10 @@ export class GeneticProgrammingSolver extends BaseSolver {
 
       // Înlocuim populația
       this.population = next;
-      
+
       // Evaluăm noua generație și găsim cel mai bun
       const currentBest = this.evaluatePopulationAndGetBest();
-      
+
       // Actualizăm cel mai bun global
       if (currentBest.energy < best.energy) {
         best = currentBest;
@@ -269,11 +232,11 @@ export class GeneticProgrammingSolver extends BaseSolver {
       // Logging și UI
       if (iteration % logInterval === 0) {
         energyHistory.push({ iteration, energy: best.energy });
-        this.onProgress?.({ 
-          iteration, 
-          currentEnergy: currentBest.energy, 
-          bestEnergy: best.energy, 
-          progress: (iteration / this.maxIterations) * 100 
+        this.onProgress?.({
+          iteration,
+          currentEnergy: currentBest.energy,
+          bestEnergy: best.energy,
+          progress: (iteration / this.maxIterations) * 100
         });
       }
 
@@ -286,17 +249,15 @@ export class GeneticProgrammingSolver extends BaseSolver {
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
-      positions: (EnergyCalculator as any).calculatePositions 
-        ? (EnergyCalculator as any).calculatePositions(this.sequence, best.directions) 
-        : [],
+      positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
       energy: best.energy
     };
-    
-    return { 
-      bestConformation, 
-      energyHistory, 
-      totalIterations: this.maxIterations, 
-      convergenceTime: Date.now() - start 
+
+    return {
+      bestConformation,
+      energyHistory,
+      totalIterations: this.maxIterations,
+      convergenceTime: Date.now() - start
     };
   }
 
@@ -307,11 +268,11 @@ export class GeneticProgrammingSolver extends BaseSolver {
     const arr: Program[] = [];
     // Lungimea programului = numărul de direcții necesar
     const length = this.sequence.length - 1;
-    
+
     for (let i = 0; i < this.populationSize; i++) {
       arr.push(createRandomProgram(length, this.possibleDirections));
     }
-    
+
     return arr;
   }
 
@@ -329,14 +290,14 @@ export class GeneticProgrammingSolver extends BaseSolver {
       const energy = EnergyCalculator.calculateEnergy(this.sequence, p.directions);
       // Salvăm fitness-ul în program
       p.fitness = energy;
-      
+
       // Verificăm dacă e cel mai bun
       if (energy < bestEnergy) {
         bestEnergy = energy;
         bestDirs = p.directions.slice();
       }
     }
-    
+
     return { directions: bestDirs, energy: bestEnergy };
   }
 
@@ -346,15 +307,15 @@ export class GeneticProgrammingSolver extends BaseSolver {
    */
   private tournamentSelect(): Program {
     const picks: Program[] = [];
-    
+
     for (let i = 0; i < this.tournamentSize; i++) {
       const randomIndex = Math.floor(Math.random() * this.population.length);
       picks.push(this.population[randomIndex]);
     }
-    
+
     // Returnăm cel cu fitness-ul minim (energia minimă)
-    return picks.reduce((b, c) => 
-      ((b.fitness ?? Infinity) <= (c.fitness ?? Infinity) ? b : c), 
+    return picks.reduce((b, c) =>
+      ((b.fitness ?? Infinity) <= (c.fitness ?? Infinity) ? b : c),
       picks[0]
     );
   }

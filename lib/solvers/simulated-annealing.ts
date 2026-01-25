@@ -1,33 +1,3 @@
-/**
- * =============================================================================
- * ALGORITM SIMULATED ANNEALING (RECOACERE SIMULATĂ) PENTRU PLIEREA PROTEINELOR
- * =============================================================================
- * 
- * Simulated Annealing este inspirat din procesul metalurgic de recoacere, unde
- * un metal este încălzit și apoi răcit lent pentru a-i reduce defectele.
- * 
- * PRINCIPIUL DE FUNCȚIONARE:
- * 1. Începem cu o temperatură inițială ridicată (T_initial)
- * 2. La fiecare iterație:
- *    a) Generăm un vecin (conformație similară cu mutație mică)
- *    b) Dacă vecinul e mai bun (energie mai mică) -> ACCEPTĂM întotdeauna
- *    c) Dacă vecinul e mai rău -> ACCEPTĂM cu probabilitate P = exp(-ΔE/T)
- * 3. Răcim temperatura treptat conform unui program de răcire
- * 4. La temperaturi mari: acceptăm mișcări proaste (explorare)
- *    La temperaturi mici: acceptăm doar mișcări bune (exploatare)
- * 
- * FORMULA BOLTZMANN (criteriul de acceptare):
- * P(accept) = exp((E_curent - E_nou) / T)
- * - Când T e mare, P e aproape 1 -> acceptăm aproape orice
- * - Când T e mic, P e aproape 0 pentru mișcări proaste -> selectiv
- * 
- * AVANTAJE:
- * - Poate scăpa din minime locale (la temperaturi mari)
- * - Converge la soluții bune (la temperaturi mici)
- * - Echilibru între explorare și exploatare
- * =============================================================================
- */
-
 // Importăm tipul Direction pentru direcțiile posibile
 import { Direction } from "../types";
 
@@ -43,10 +13,10 @@ import { EnergyCalculator } from "./energy-calculator";
 export class SimulatedAnnealingSolver extends BaseSolver {
   // Temperatura inițială - controlează cât de mult explorăm la început
   private initialTemperature: number;
-  
+
   // Temperatura finală - când oprim algoritmul (aproape de 0)
   private finalTemperature: number;
-  
+
   // Rata de răcire - cât de repede scade temperatura
   private coolingRate: number;
 
@@ -66,7 +36,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   async solve(): Promise<SolverResult> {
     // Marcăm timpul de start
     const startTime = Date.now();
-    
+
     // Array pentru istoricul energiilor
     const energyHistory: { iteration: number; energy: number }[] = [];
 
@@ -75,7 +45,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
 
     // PASUL 2: Generăm o conformație inițială aleatoare
     let currentConformation = this.initializeConformation();
-    
+
     // Salvăm cea mai bună conformație găsită (inițial = cea curentă)
     let bestConformation = { ...currentConformation };
 
@@ -176,16 +146,16 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       // Copiem direcțiile curente
       const newDirections = [...conformation.directions];
-      
+
       // Alegem o poziție aleatoare de mutat
       const randomIndex = Math.floor(Math.random() * newDirections.length);
-      
+
       // Obținem direcțiile posibile (2D: L,R,U,D sau 3D: L,R,U,D,F,B)
       const possibleDirections: Direction[] = this.possibleDirections;
 
       // Salvăm direcția curentă la poziția aleasă
       const currentDirection = newDirections[randomIndex];
-      
+
       // Alegem o direcție diferită (excludem direcția curentă)
       const availableDirections = possibleDirections.filter(d => d !== currentDirection);
       const newDirection = availableDirections[Math.floor(Math.random() * availableDirections.length)];
@@ -222,7 +192,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
    */
   private acceptMove(currentEnergy: number, newEnergy: number, temperature: number): boolean {
     // CAZURI SPECIALE pentru energii infinite (conformații invalide)
-    
+
     // Caz 1: Ambele sunt invalide -> nu acceptăm
     if (currentEnergy === Number.POSITIVE_INFINITY && newEnergy === Number.POSITIVE_INFINITY) {
       return false;
@@ -244,7 +214,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     }
 
     // CAZUL NORMAL: Ambele energii sunt finite
-    
+
     // Dacă noua conformație e MAI BUNĂ (energie mai mică) -> ACCEPTĂM întotdeauna
     if (newEnergy < currentEnergy) {
       return true;
@@ -256,7 +226,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       // ΔE = newEnergy - currentEnergy (pozitiv, pentru că newEnergy > currentEnergy)
       // Echivalent: P = exp((currentEnergy - newEnergy) / T)
       const acceptanceProbability = Math.exp((currentEnergy - newEnergy) / temperature);
-      
+
       // Generăm un număr aleatoriu între 0 și 1 și comparăm cu probabilitatea
       return Math.random() < acceptanceProbability;
     }
@@ -282,10 +252,10 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     // Calculăm factorul de răcire bazat pe progresul în algoritm
     // (T_final / T_initial)^(iteration / maxIterations)
     const coolingFactor = Math.pow(
-      this.finalTemperature / this.initialTemperature, 
+      this.finalTemperature / this.initialTemperature,
       iteration / this.maxIterations
     );
-    
+
     // Noua temperatură = T_initial * factorul de răcire
     const newTemperature = this.initialTemperature * coolingFactor;
 

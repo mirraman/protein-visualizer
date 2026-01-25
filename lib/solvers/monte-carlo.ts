@@ -1,26 +1,3 @@
-/**
- * =============================================================================
- * ALGORITM MONTE CARLO PENTRU PLIEREA PROTEINELOR (MODEL HP)
- * =============================================================================
- * 
- * Algoritmul Monte Carlo este o metodă de eșantionare stocastică care explorează
- * spațiul conformațional al proteinei prin generare aleatoare de configurații.
- * 
- * PRINCIPIUL DE FUNCȚIONARE:
- * 1. Se generează o populație inițială de conformații aleatorii
- * 2. La fiecare iterație se creează noi conformații prin:
- *    - Generare complet aleatoare (50% din populație)
- *    - Mutația conformațiilor bune existente (30% din populație)
- * 3. Se păstrează diversitatea în populație (60% cele mai bune + 40% aleatorii)
- * 4. Se urmărește cea mai bună conformație găsită (energie minimă)
- * 
- * DIFERENȚA FAȚĂ DE ALTE METODE:
- * - Monte Carlo NU optimizează activ, ci EXPLOREAZĂ spațiul de soluții
- * - Este util pentru a înțelege distribuția energiilor posibile
- * - Oferă o estimare a peisajului energetic al proteinei
- * =============================================================================
- */
-
 // Importăm tipul Direction care definește direcțiile posibile (L, R, U, D, F, B)
 import { Direction } from "../types";
 
@@ -37,10 +14,10 @@ import { EnergyCalculator } from "./energy-calculator";
 export class MonteCarloSolver extends BaseSolver {
   // Dimensiunea populației - câte conformații păstrăm în fiecare moment
   private populationSize: number;
-  
+
   // Array-ul care conține populația curentă de conformații
   private population: Conformation[] = [];
-  
+
   // Contor pentru numărul total de conformații generate (pentru statistici)
   private totalSampledCount: number = 0;
 
@@ -62,7 +39,7 @@ export class MonteCarloSolver extends BaseSolver {
   async solve(): Promise<SolverResult> {
     // Marcăm timpul de start pentru a calcula durata execuției
     const startTime = Date.now();
-    
+
     // Array pentru a stoca istoricul energiilor (pentru grafic)
     const energyHistory: { iteration: number; energy: number }[] = [];
 
@@ -71,7 +48,7 @@ export class MonteCarloSolver extends BaseSolver {
 
     // Obținem cea mai bună conformație din populația inițială
     let bestConformation = this.getBestConformation();
-    
+
     // Calculăm energia medie a populației inițiale
     let averageEnergy = this.getAverageEnergy();
 
@@ -106,7 +83,7 @@ export class MonteCarloSolver extends BaseSolver {
       if (iteration % logInterval === 0) {
         // Calculăm energia medie actuală a populației
         averageEnergy = this.getAverageEnergy();
-        
+
         // Adăugăm în istoricul energiilor
         energyHistory.push({
           iteration,
@@ -186,7 +163,7 @@ export class MonteCarloSolver extends BaseSolver {
 
     // === PARTEA 2: Generăm 30% conformații prin mutația celor bune ===
     const mutationCount = Math.floor(this.populationSize * 0.3);
-    
+
     // Selectăm jumătatea superioară a populației (cele mai bune după energie)
     // Sortăm crescător după energie (energia mai mică = mai bună)
     const topHalf = [...this.population]
@@ -225,7 +202,7 @@ export class MonteCarloSolver extends BaseSolver {
 
     // Alegem câte mutații să facem (1, 2 sau 3)
     const mutationCount = Math.floor(Math.random() * 3) + 1;
-    
+
     // Obținem lista de direcții posibile (depinde de tipul latice: 2D sau 3D)
     const possibleDirections: Direction[] = this.possibleDirections;
 
@@ -303,13 +280,13 @@ export class MonteCarloSolver extends BaseSolver {
   private getAverageEnergy(): number {
     // Filtrăm conformațiile valide (energia finită)
     const validConformations = this.population.filter(c => c.energy !== Number.POSITIVE_INFINITY);
-    
+
     // Dacă nu avem conformații valide, returnăm 0
     if (validConformations.length === 0) return 0;
 
     // Calculăm suma energiilor
     const totalEnergy = validConformations.reduce((sum, c) => sum + c.energy, 0);
-    
+
     // Returnăm media
     return totalEnergy / validConformations.length;
   }
@@ -355,7 +332,7 @@ export class MonteCarloSolver extends BaseSolver {
 
     // Calculăm energia medie
     const avgEnergy = energies.reduce((sum, e) => sum + e, 0) / energies.length;
-    
+
     // Calculăm varianța (pentru scorul de diversitate)
     const variance = energies.reduce((sum, e) => sum + Math.pow(e - avgEnergy, 2), 0) / energies.length;
 
@@ -387,7 +364,7 @@ export class MonteCarloSolver extends BaseSolver {
     // Găsim energia minimă și maximă
     const minEnergy = Math.min(...energies);
     const maxEnergy = Math.max(...energies);
-    
+
     // Calculăm dimensiunea fiecărui interval
     // Evităm împărțirea la zero dacă toate energiile sunt egale
     const binSize = maxEnergy === minEnergy ? 1 : (maxEnergy - minEnergy) / bins;
@@ -399,10 +376,10 @@ export class MonteCarloSolver extends BaseSolver {
       // Calculăm limitele intervalului
       const binStart = minEnergy + i * binSize;
       const binEnd = binStart + binSize;
-      
+
       // Numărăm conformațiile din acest interval
       // Pentru ultimul interval, includem și valoarea maximă
-      const count = energies.filter(e => 
+      const count = energies.filter(e =>
         e >= binStart && (i === bins - 1 ? e <= binEnd : e < binEnd)
       ).length;
 

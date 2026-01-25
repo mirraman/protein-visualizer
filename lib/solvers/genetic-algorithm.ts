@@ -1,33 +1,3 @@
-/**
- * =============================================================================
- * ALGORITM GENETIC (GA) PENTRU PLIEREA PROTEINELOR
- * =============================================================================
- * 
- * Algoritmul Genetic este inspirat din teoria evoluției lui Darwin:
- * "Supraviețuirea celui mai adaptat" (survival of the fittest)
- * 
- * PRINCIPIUL DE FUNCȚIONARE:
- * 1. INIȚIALIZARE: Creăm o populație de indivizi (conformații) aleatorii
- * 2. EVALUARE: Calculăm fitness-ul fiecărui individ (energia - mai mică = mai bună)
- * 3. SELECȚIE: Alegem părinții pentru reproducere (cei mai buni au șanse mai mari)
- * 4. ÎNCRUCIȘARE (Crossover): Combinăm genele a doi părinți pentru a crea copii
- * 5. MUTAȚIE: Modificăm aleatoriu unele gene pentru diversitate
- * 6. ELITISM: Păstrăm cei mai buni indivizi în generația următoare
- * 7. Repetăm pașii 2-6 până la convergență
- * 
- * OPERATORI GENETICI:
- * - SELECȚIE TURNIR: Alegem k indivizi aleatoriu, cel mai bun câștigă
- * - CROSSOVER UN-PUNCT: Tăiem cromozomii într-un punct și schimbăm părțile
- * - MUTAȚIE: Schimbăm o genă (direcție) cu o altă valoare aleatorie
- * 
- * TERMINOLOGIE:
- * - Cromozom/Individ = o conformație (secvență de direcții)
- * - Genă = o direcție individuală (L, R, U, D, F, B)
- * - Fitness = calitatea soluției (energia - mai mică = mai bună)
- * - Generație = o iterație completă a algoritmului
- * =============================================================================
- */
-
 // Importăm calculatorul de energie
 import { EnergyCalculator } from "./energy-calculator";
 
@@ -50,16 +20,16 @@ type Individual = {
 export class GeneticAlgorithmSolver extends BaseSolver {
   // Dimensiunea populației - câți indivizi avem în fiecare generație
   private populationSize: number;
-  
+
   // Rata de crossover - probabilitatea de a face încrucișare (ex: 0.9 = 90%)
   private crossoverRate: number;
-  
+
   // Rata de mutație - probabilitatea de a muta o genă (ex: 0.1 = 10%)
   private mutationRate: number;
-  
+
   // Numărul de elită - câți dintre cei mai buni sunt copiați direct
   private eliteCount: number;
-  
+
   // Dimensiunea turnirului - câți indivizi participă la selecție
   private tournamentSize: number;
 
@@ -137,10 +107,10 @@ export class GeneticAlgorithmSolver extends BaseSolver {
 
       // Înlocuim vechea generație cu cea nouă
       this.population = nextPopulation;
-      
+
       // Găsim cel mai bun individ din noua generație
       const currentBest = this.getBestIndividual();
-      
+
       // Actualizăm cel mai bun global dacă am găsit ceva mai bun
       if (currentBest.energy < best.energy) {
         best = currentBest;
@@ -168,9 +138,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
-      positions: EnergyCalculator["calculatePositions" as any]
-        ? (EnergyCalculator as any).calculatePositions(this.sequence, best.directions)
-        : [],
+      positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
       energy: best.energy
     };
 
@@ -188,7 +156,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    */
   private initializePopulation(): Individual[] {
     const individuals: Individual[] = [];
-    
+
     // Creăm populationSize indivizi
     for (let i = 0; i < this.populationSize; i++) {
       // Generăm un cromozom aleatoriu
@@ -198,7 +166,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       // Adăugăm individul în populație
       individuals.push({ directions, energy });
     }
-    
+
     return individuals;
   }
 
@@ -208,10 +176,25 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    */
   private generateInitialDirections(): Direction[] {
     const length = this.sequence.length - 1;
-    // Generăm direcții aleatorii
-    const base = this.generateRandomDirections();
-    // Ne asigurăm că avem lungimea corectă
-    return base.slice(0, length);
+    let attempts = 0;
+
+    while (attempts < 100) {
+      // Generate random directions
+      const candidate = this.generateRandomDirections().slice(0, length);
+
+      // Check if valid using your EnergyCalculator
+      // (You might need to expose a helper for this or calculate energy directly)
+      const positions = EnergyCalculator.calculatePositions(this.sequence, candidate);
+      // Assuming you updated EnergyCalculator to expose a check or use the countCollisions logic
+      if (this.isValid(positions)) {
+        return candidate;
+      }
+      attempts++;
+    }
+
+    // If we fail 100 times, just return the last one and let the GA fix it
+    // (The soft constraint logic above will handle it)
+    return this.generateRandomDirections().slice(0, length);
   }
 
   /**
@@ -242,16 +225,16 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    */
   private tournamentSelect(): Individual {
     const picks: Individual[] = [];
-    
+
     // Alegem tournamentSize indivizi aleatoriu
     for (let i = 0; i < this.tournamentSize; i++) {
       const idx = Math.floor(Math.random() * this.population.length);
       picks.push(this.population[idx]);
     }
-    
+
     // Returnăm cel mai bun din turnir (energia minimă)
-    return picks.reduce((best, cur) => 
-      (cur.energy < best.energy ? cur : best), 
+    return picks.reduce((best, cur) =>
+      (cur.energy < best.energy ? cur : best),
       picks[0]
     );
   }
@@ -278,22 +261,22 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     if (Math.random() > this.crossoverRate) {
       return [a.slice(), b.slice()];  // Returnăm copii ai părinților
     }
-    
+
     // Calculăm lungimea minimă (pentru siguranță)
     const length = Math.min(a.length, b.length);
-    
+
     // Dacă cromozomul e prea scurt, nu putem face crossover
     if (length < 2) {
       return [a.slice(), b.slice()];
     }
-    
+
     // Alegem punctul de tăiere aleatoriu (între 1 și length-1)
     const point = 1 + Math.floor(Math.random() * (length - 1));
-    
+
     // Creăm copiii prin schimbul părților
     const childA = a.slice(0, point).concat(b.slice(point));  // A[0..point] + B[point..end]
     const childB = b.slice(0, point).concat(a.slice(point));  // B[0..point] + A[point..end]
-    
+
     return [childA as Direction[], childB as Direction[]];
   }
 
@@ -312,10 +295,10 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   private mutate(genes: Direction[]): Direction[] {
     // Copiem genele (nu modificăm originalul)
     const dirs: Direction[] = genes.slice();
-    
+
     // Alfabetul de gene (direcțiile posibile)
     const alphabet: Direction[] = this.possibleDirections;
-    
+
     // Pentru fiecare genă
     for (let i = 0; i < dirs.length; i++) {
       // Cu probabilitate mutationRate
@@ -326,7 +309,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
         dirs[i] = choices[Math.floor(Math.random() * choices.length)];
       }
     }
-    
+
     return dirs;
   }
 
@@ -335,9 +318,18 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    * (cel cu energia minimă)
    */
   private getBestIndividual(): Individual {
-    return this.population.reduce((best, cur) => 
-      (cur.energy < best.energy ? cur : best), 
+    return this.population.reduce((best, cur) =>
+      (cur.energy < best.energy ? cur : best),
       this.population[0]
     );
+  }
+
+  /**
+   * Verifică dacă o conformație este validă (fără coliziuni)
+   * @param positions - Array cu pozițiile aminoacizilor
+   * @returns boolean - true dacă nu există coliziuni
+   */
+  private isValid(positions: { x: number; y: number; z: number }[]): boolean {
+    return EnergyCalculator.countCollisions(positions) === 0;
   }
 }
