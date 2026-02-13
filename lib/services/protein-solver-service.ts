@@ -29,6 +29,10 @@ export interface SolverConfig {
   mutationRate?: number;
   eliteCount?: number;
   tournamentSize?: number;
+  // GA population saving
+  saveGenerations?: boolean; // Save all chromosomes to DB
+  userId?: string; // User ID for saving generations
+  experimentName?: string; // Optional experiment name
   initialTemperature?: number; // For Simulated Annealing
   finalTemperature?: number;
   coolingRate?: number;
@@ -91,6 +95,9 @@ export class ProteinSolverService {
           tournamentSize: config.tournamentSize ?? 3,
           initialDirections: config.initialDirections,
           latticeType: config.latticeType,
+          saveGenerations: config.saveGenerations ?? false,
+          userId: config.userId,
+          experimentName: config.experimentName,
           onProgress: this.handleProgress.bind(this)
         });
       } else if (config.algorithm === 'es') {

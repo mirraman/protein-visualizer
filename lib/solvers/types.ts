@@ -44,6 +44,9 @@ export interface GeneticAlgorithmParameters extends SolverParameters {
   mutationRate: number; // 0..1 per gene
   eliteCount: number; // number of elites to keep each generation
   tournamentSize: number; // for selection
+  saveGenerations?: boolean; // Save all chromosomes to DB
+  userId?: string; // User ID for saving generations
+  experimentName?: string; // Optional experiment name
 }
 
 export interface EvolutionStrategiesParameters extends SolverParameters {

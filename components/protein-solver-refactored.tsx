@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useCallback, Suspense, useRef, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useCallback, Suspense, useRef, forwardRef, useImperativeHandle, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useSession } from "next-auth/react";
 import {
   Select,
   SelectContent,
@@ -17,6 +19,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera, Html } from "@react-three/drei";
 import ProteinModel from "./protein-model";
+import { PopulationVisualizer } from "./population-visualizer";
+import { PopulationVisualizer } from "./population-visualizer";
 import {
   LineChart,
   Line,
@@ -112,6 +116,12 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
 
   // UI state
   const [showDetails, setShowDetails] = useState(false);
+  const [saveGenerations, setSaveGenerations] = useState(false);
+  const [showPopulationView, setShowPopulationView] = useState(false);
+  const [savedGenerations, setSavedGenerations] = useState<any[]>([]);
+
+  // Session for userId
+  const { data: session } = useSession();
 
   // Ref for export
   const screenshotRef = useRef<ScreenshotHandle>(null);
@@ -188,16 +198,39 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
           algorithmType === "es" ? initialMutationRate[0] : undefined,
         // GP parameters
         maxTreeDepth: algorithmType === "gp" ? maxTreeDepth[0] : undefined,
+        // Population saving (only for GA)
+        saveGenerations: algorithmType === "ga" ? saveGenerations : false,
+        userId: algorithmType === "ga" && saveGenerations && session?.user?.id ? session.user.id : undefined,
+        experimentName: algorithmType === "ga" && saveGenerations ? `GA-${activeSequence.substring(0, 10)}-${Date.now()}` : undefined,
       };
 
       const result = await solverService.solve(config, {
         onProgress: (progressData) => {
           setProgress(progressData);
         },
-        onComplete: (result) => {
+        onComplete: async (result) => {
           setCurrentResult(result);
           setBestConformation(result.bestConformation);
           setProgress({ ...progress!, progress: 100 });
+          
+          // Load saved generations if GA was used with saveGenerations enabled
+          if (algorithmType === "ga" && saveGenerations && session?.user?.id) {
+            try {
+              const response = await fetch(
+                `/api/ga-populations?sequence=${encodeURIComponent(activeSequence)}&userId=${session.user.id}`
+              );
+              if (response.ok) {
+                const data = await response.json();
+                setSavedGenerations(data.data || []);
+                if (data.data && data.data.length > 0) {
+                  setShowPopulationView(true);
+                }
+              }
+            } catch (error) {
+              console.error("Failed to load saved generations:", error);
+            }
+          }
+          
           // Only call onOptimizationComplete if we have initialDirections (meaning we're working with existing protein data)
           if (initialDirections) {
             onOptimizationComplete(
@@ -225,6 +258,9 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
     initialDirections,
     solverService,
     onOptimizationComplete,
+    saveGenerations,
+    session?.user?.id,
+    activeSequence,
   ]);
 
   const stopSolver = useCallback(() => {
@@ -434,6 +470,25 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                       step={1}
                       disabled={isRunning}
                     />
+                  </div>
+                  <div className="flex items-center space-x-2 pt-2">
+                    <Checkbox
+                      id="saveGenerations"
+                      checked={saveGenerations}
+                      onCheckedChange={(checked) => setSaveGenerations(checked === true)}
+                      disabled={isRunning || !session?.user?.id}
+                    />
+                    <Label
+                      htmlFor="saveGenerations"
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Save all generations to database
+                      {!session?.user?.id && (
+                        <span className="text-xs text-gray-500 block">
+                          (Sign in required)
+                        </span>
+                      )}
+                    </Label>
                   </div>
                 </div>
               )}
@@ -872,6 +927,40 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
           </div>
         )}
       </div>
+
+      {/* Population Visualization Section */}
+      {showPopulationView && savedGenerations.length > 0 && algorithmType === "ga" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Population Evolution</CardTitle>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowPopulationView(false)}
+                >
+                  Hide
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <PopulationVisualizer
+                sequence={activeSequence}
+                generations={savedGenerations}
+                onChromosomeSelect={(chromosome, generation) => {
+                  setBestConformation({
+                    sequence: activeSequence,
+                    directions: chromosome.directions as Direction[],
+                    positions: chromosome.positions,
+                    energy: chromosome.energy,
+                  });
+                }}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Show Details Section */}
       {currentResult && (

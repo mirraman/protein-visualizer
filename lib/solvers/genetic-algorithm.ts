@@ -4,6 +4,9 @@ import { EnergyCalculator } from "./energy-calculator";
 // Importăm clasele de bază și tipurile
 import { BaseSolver, type SolverResult, type Conformation, type GeneticAlgorithmParameters } from "./types";
 import type { Direction } from "../types";
+import GAPopulation, { type IChromosome } from "../models/GAPopulation";
+import { connectDB } from "../mongodb";
+import mongoose from "mongoose";
 
 /**
  * Tipul Individual - Reprezintă un cromozom în algoritm
@@ -36,6 +39,12 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   // Populația curentă de indivizi
   private population: Individual[] = [];
 
+  // Flag-uri pentru salvare generații
+  private saveGenerations: boolean;
+  private userId?: string;
+  private experimentName?: string;
+  private dbConnected: boolean = false;
+
   /**
    * Constructor - Inițializează algoritmul cu parametrii genetici
    */
@@ -46,6 +55,9 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     this.mutationRate = parameters.mutationRate;          // Ex: 0.1 (10%)
     this.eliteCount = parameters.eliteCount;              // Ex: 3 indivizi
     this.tournamentSize = parameters.tournamentSize;      // Ex: 3 indivizi
+    this.saveGenerations = parameters.saveGenerations || false;
+    this.userId = parameters.userId;
+    this.experimentName = parameters.experimentName;
   }
 
   /**
@@ -55,12 +67,28 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const startTime = Date.now();
     const energyHistory: { iteration: number; energy: number }[] = [];
 
+    // Conectare la DB dacă trebuie să salvăm generații
+    if (this.saveGenerations && this.userId) {
+      try {
+        await connectDB();
+        this.dbConnected = true;
+      } catch (error) {
+        console.error('Failed to connect to database for saving generations:', error);
+        // Continuăm algoritmul chiar dacă conectarea eșuează
+      }
+    }
+
     // PASUL 1: INIȚIALIZARE - Creăm populația inițială
     this.population = this.initializePopulation();
 
     // Găsim cel mai bun individ din populația inițială
     let best = this.getBestIndividual();
     energyHistory.push({ iteration: 0, energy: best.energy });
+
+    // Salvează generația inițială (generația 0)
+    if (this.saveGenerations && this.userId && this.dbConnected) {
+      await this.saveGeneration(0);
+    }
 
     // Calculăm intervalele pentru logging și UI
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
@@ -125,6 +153,11 @@ export class GeneticAlgorithmSolver extends BaseSolver {
           bestEnergy: best.energy,
           progress: (iteration / this.maxIterations) * 100
         });
+
+        // Salvează generația curentă în DB (la aceleași intervale ca logging-ul)
+        if (this.saveGenerations && this.userId && this.dbConnected) {
+          await this.saveGeneration(iteration);
+        }
       }
 
       // Cedăm controlul browser-ului
@@ -331,5 +364,80 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    */
   private isValid(positions: { x: number; y: number; z: number }[]): boolean {
     return EnergyCalculator.countCollisions(positions) === 0;
+  }
+
+  /**
+   * Calculează numărul de contacte H-H pentru o conformație
+   * @param sequence - Secvența de aminoacizi
+   * @param positions - Pozițiile 3D
+   * @returns number - Numărul de contacte H-H
+   */
+  private calculateHHContacts(sequence: string, positions: { x: number; y: number; z: number }[]): number {
+    let contacts = 0;
+    for (let i = 0; i < sequence.length; i++) {
+      if (sequence[i] === "H") {
+        for (let j = i + 2; j < sequence.length; j++) {
+          if (sequence[j] === "H") {
+            const dx = Math.abs(positions[i].x - positions[j].x);
+            const dy = Math.abs(positions[i].y - positions[j].y);
+            const dz = Math.abs(positions[i].z - positions[j].z);
+            if (dx + dy + dz === 1) {
+              contacts++;
+            }
+          }
+        }
+      }
+    }
+    return contacts;
+  }
+
+  /**
+   * Salvează toți cromozomii din generația curentă în baza de date
+   * NU păstrează în memorie - salvează direct în DB
+   * @param generation - Numărul generației
+   */
+  private async saveGeneration(generation: number): Promise<void> {
+    if (!this.userId || !this.dbConnected) {
+      return;
+    }
+
+    try {
+      // Convertește populația în format pentru DB
+      const chromosomes: IChromosome[] = this.population.map(ind => {
+        const positions = EnergyCalculator.calculatePositions(this.sequence, ind.directions);
+        
+        // Calculează numărul de contacte H-H
+        const hhContacts = this.calculateHHContacts(this.sequence, positions);
+        
+        return {
+          directions: ind.directions,
+          energy: ind.energy,
+          positions: positions,
+          hhContacts: hhContacts
+        };
+      });
+
+      // Calculează statistici
+      const energies = chromosomes.map(c => c.energy);
+      const bestEnergy = Math.min(...energies);
+      const averageEnergy = energies.reduce((a, b) => a + b, 0) / energies.length;
+
+      // Salvează în DB
+      await GAPopulation.create({
+        userId: new mongoose.Types.ObjectId(this.userId),
+        sequence: this.sequence,
+        generation: generation,
+        chromosomes: chromosomes,
+        bestEnergy: bestEnergy,
+        averageEnergy: averageEnergy,
+        experimentName: this.experimentName,
+      });
+
+      // Nu golim populația din memorie aici pentru că algoritmul mai are nevoie de ea
+      // Populația va fi înlocuită la următoarea iterație
+    } catch (error) {
+      console.error(`Error saving generation ${generation}:`, error);
+      // Nu aruncăm eroare - continuăm algoritmul chiar dacă salvare eșuează
+    }
   }
 }

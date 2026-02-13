@@ -27,6 +27,7 @@ interface ProteinModelProps {
   // NEW: Optional PDB data for Rosetta results
   pdbData?: ParsedPDB;
   pdbVisualizationType?: PDBVisualizationType;
+  showHHContacts?: boolean; // Show H-H contact lines (default: true)
 }
 
 interface Position {
@@ -35,17 +36,47 @@ interface Position {
   z: number;
 }
 
+/**
+ * Calculează contactele H-H (hidrofobice) între aminoacizi
+ * Un contact H-H = doi aminoacizi H care sunt vecini în spațiu (distanță Manhattan = 1)
+ * dar NU sunt adiacenți în secvență
+ */
+function calculateHHContacts(sequence: string, positions: Position[]): [number, number][] {
+  const contacts: [number, number][] = [];
+  
+  for (let i = 0; i < sequence.length; i++) {
+    if (sequence[i] === "H") {
+      // Începem de la i+2 pentru a evita contactele adiacente în secvență
+      for (let j = i + 2; j < sequence.length; j++) {
+        if (sequence[j] === "H") {
+          const dx = Math.abs(positions[i].x - positions[j].x);
+          const dy = Math.abs(positions[i].y - positions[j].y);
+          const dz = Math.abs(positions[i].z - positions[j].z);
+          
+          // Distanța Manhattan = 1 înseamnă că sunt vecini pe grilă (contact!)
+          if (dx + dy + dz === 1) {
+            contacts.push([i, j]);
+          }
+        }
+      }
+    }
+  }
+  
+  return contacts;
+}
+
 const ProteinModel: React.FC<ProteinModelProps> = ({
   sequence,
   directions,
   type,
   pdbData,
   pdbVisualizationType = "ball-and-stick",
+  showHHContacts = true,
 }) => {
   // Model is static; no rotation/animation refs required
 
   // Generate positions for each amino acid in the sequence
-  const { positions, bonds } = useMemo(() => {
+  const { positions, bonds, hhContacts } = useMemo(() => {
     const positions: Position[] = [];
     const bonds: [number, number][] = [];
 
@@ -87,7 +118,10 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
       }
     }
 
-    return { positions, bonds };
+    // Calculate H-H contacts
+    const hhContacts = calculateHHContacts(sequence, positions);
+
+    return { positions, bonds, hhContacts };
   }, [sequence, directions, type]);
 
   // No animation: the protein model remains completely static
@@ -256,7 +290,20 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
       {/* Render based on visualization type */}
       {type === "2d" || type === "3d" ? (
         <>
-          {/* Render bonds as lines */}
+          {/* Render H-H contacts as highlighted red lines (if enabled) */}
+          {showHHContacts && hhContacts.map(([i, j], index) => (
+            <Line
+              key={`hh-contact-${index}`}
+              points={[
+                [positions[i].x, positions[i].y, positions[i].z],
+                [positions[j].x, positions[j].y, positions[j].z],
+              ]}
+              color="#ff6b6b" // Red for H-H contacts
+              lineWidth={3}
+            />
+          ))}
+
+          {/* Render sequential bonds as lines (gray, thinner) */}
           {bonds.map(([i, j], index) => (
             <Line
               key={`bond-${index}`}
@@ -264,7 +311,7 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
                 [positions[i].x, positions[i].y, positions[i].z],
                 [positions[j].x, positions[j].y, positions[j].z],
               ]}
-              color="black"
+              color="#666666" // Gray for sequential bonds
               lineWidth={1.5}
             />
           ))}
