@@ -73,6 +73,11 @@ export function countCollisions(positions: Position[]): number {
  * - Dacă = 1: aminoacizii sunt vecini pe grilă = CONTACT!
  * - Dacă > 1: nu sunt vecini
  * 
+ * CONSISTENCY CHECK:
+ * - calculateHHContacts returns positive count (e.g., 5 contacts)
+ * - calculateContactEnergy returns negative energy (e.g., -5)
+ * - Relationship: calculateContactEnergy = -(calculateHHContacts)
+ * 
  * @param sequence - Secvența de aminoacizi
  * @param positions - Pozițiile 3D (pentru 2D, z = 0)
  * @returns Energia totală (negativă = bună, ex: -6 pentru 6 contacte H-H)
@@ -108,9 +113,15 @@ export function calculateContactEnergy(sequence: string, positions: Position[]):
 
 /**
  * Calculează numărul de contacte H-H pentru o conformație
+ * 
+ * CONSISTENCY CHECK:
+ * - calculateHHContacts returns positive count (e.g., 5 contacts)
+ * - calculateContactEnergy returns negative energy (e.g., -5)
+ * - Relationship: calculateContactEnergy = -(calculateHHContacts)
+ * 
  * @param sequence - Secvența de aminoacizi
  * @param positions - Pozițiile 3D
- * @returns Numărul de contacte H-H
+ * @returns Numărul de contacte H-H (pozitiv, ex: 5 pentru 5 contacte)
  */
 export function calculateHHContacts(sequence: string, positions: Position[]): number {
   let contacts = 0;
