@@ -1273,14 +1273,12 @@ const ProteinVisualizer = () => {
         </div>
 
         <div className="grid grid-cols-2 gap-4 items-start">
-          <div className="self-start">
-            <SavedContentDialog
-              onLoadProtein={handleLoadProtein}
-              onAddToComparison={handleAddToComparison}
-              onLoadComparison={handleLoadComparison}
-              onComparisonSaved={() => setComparisonSaved((prev) => !prev)}
-            />
-          </div>
+          <SavedContentDialog
+            onLoadProtein={handleLoadProtein}
+            onAddToComparison={handleAddToComparison}
+            onLoadComparison={handleLoadComparison}
+            onComparisonSaved={() => setComparisonSaved((prev) => !prev)}
+          />
 
           {/* Actions Card */}
           {proteinData && (
