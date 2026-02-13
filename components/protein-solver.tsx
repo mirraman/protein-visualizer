@@ -153,6 +153,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           populationSize: populationSize[0],
           initialDirections,
           latticeType,
+          onProgress: (progressData) => {
+            setProgress(progressData.progress || 0);
+          },
         });
       } else if (algorithmType === "simulated-annealing") {
         solver = new SimulatedAnnealingSolver({
@@ -163,6 +166,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           coolingRate: 0.95,
           initialDirections,
           latticeType,
+          onProgress: (progressData) => {
+            setProgress(progressData.progress || 0);
+          },
         });
       } else if (algorithmType === "ga") {
         solver = new GeneticAlgorithmSolver({
@@ -175,6 +181,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           tournamentSize: tournamentSize[0],
           initialDirections,
           latticeType,
+          onProgress: (progressData) => {
+            setProgress(progressData.progress || 0);
+          },
         });
       } else if (algorithmType === "es") {
         solver = new EvolutionStrategiesSolver({
@@ -189,6 +198,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           plusSelection: true,
           initialDirections,
           latticeType,
+          onProgress: (progressData) => {
+            setProgress(progressData.progress || 0);
+          },
         });
       } else if (algorithmType === "ep") {
         solver = new EvolutionaryProgrammingSolver({
@@ -200,6 +212,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           eliteCount: 2,
           initialDirections,
           latticeType,
+          onProgress: (progressData) => {
+            setProgress(progressData.progress || 0);
+          },
         });
       } else if (algorithmType === "gp") {
         solver = new GeneticProgrammingSolver({
@@ -214,6 +229,9 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           rolloutCount: 1,
           initialDirections,
           latticeType,
+          onProgress: (progressData) => {
+            setProgress(progressData.progress || 0);
+          },
         });
       } else {
         throw new Error(`Unknown algorithm type: ${algorithmType}`);

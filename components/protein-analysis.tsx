@@ -188,7 +188,7 @@ const ProteinAnalysis: React.FC<ProteinAnalysisProps> = ({ proteinData }) => {
         <div className="flex flex-wrap gap-1">
           {sequence.split("").map((residue, index) => (
             <div
-              key={index}
+              key={`${sequence}-${index}-${residue}`}
               className={`w-8 h-8 flex items-center justify-center rounded-md text-white font-medium ${
                 residue === "H" ? "bg-red-500" : "bg-blue-500"
               }`}

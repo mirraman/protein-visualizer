@@ -285,7 +285,7 @@ const ProteinComparison: React.FC<ProteinComparisonProps> = ({
                         <div className="flex flex-wrap gap-1">
                           {protein.sequence.split("").map((residue, i) => (
                             <div
-                              key={i}
+                              key={`${protein.sequence}-${i}-${residue}`}
                               className={`w-8 h-8 flex items-center justify-center rounded-md text-white font-medium ${
                                 residue === "H" ? "bg-red-500" : "bg-blue-500"
                               }`}

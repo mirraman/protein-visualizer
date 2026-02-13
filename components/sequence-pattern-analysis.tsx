@@ -123,7 +123,7 @@ export const SequencePatternAnalysis: React.FC<SequencePatternAnalysisProps> = (
             <div className="flex flex-wrap gap-1">
               {sequence.split("").map((residue, index) => (
                 <div
-                  key={index}
+                  key={`${sequence}-${index}-${residue}`}
                   className={`w-8 h-8 flex items-center justify-center rounded-md text-white font-bold text-sm shadow-sm ${
                     residue === "H" ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"
                   }`}
