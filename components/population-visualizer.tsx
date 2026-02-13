@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import ProteinModel from "./protein-model";
+import { ConnectionDetailsTable } from "./connection-details-table";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Slider } from "./ui/slider";
@@ -23,6 +24,7 @@ export const PopulationVisualizer: React.FC<PopulationVisualizerProps> = ({
   const [selectedGeneration, setSelectedGeneration] = useState(0);
   const [selectedChromosomeIndex, setSelectedChromosomeIndex] = useState(0);
   const [viewMode, setViewMode] = useState<"single" | "grid">("single");
+  const [showConnectionTable, setShowConnectionTable] = useState(false);
 
   // Sortează generațiile după număr
   const sortedGenerations = [...generations].sort((a, b) => a.generation - b.generation);
@@ -90,7 +92,7 @@ export const PopulationVisualizer: React.FC<PopulationVisualizerProps> = ({
           </div>
 
           {/* View Mode Toggle */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant={viewMode === "single" ? "default" : "outline"}
               onClick={() => setViewMode("single")}
@@ -104,6 +106,13 @@ export const PopulationVisualizer: React.FC<PopulationVisualizerProps> = ({
               size="sm"
             >
               Grid View (All {currentGeneration.chromosomes.length})
+            </Button>
+            <Button
+              variant={showConnectionTable ? "default" : "outline"}
+              onClick={() => setShowConnectionTable(!showConnectionTable)}
+              size="sm"
+            >
+              {showConnectionTable ? "Hide" : "Show"} Connection Table
             </Button>
           </div>
 
@@ -155,7 +164,20 @@ export const PopulationVisualizer: React.FC<PopulationVisualizerProps> = ({
             )}
           </CardContent>
         </Card>
-      ) : (
+      ) : null}
+
+      {/* Connection Details Table */}
+      {showConnectionTable && currentChromosome && (
+        <ConnectionDetailsTable
+          sequence={sequence}
+          directions={currentChromosome.directions as any}
+          positions={currentChromosome.positions}
+          title={`Connection Details - Chromosome #${selectedChromosomeIndex + 1} (Gen ${currentGeneration.generation})`}
+        />
+      )}
+
+      {/* Grid View */}
+      {viewMode === "grid" ? (
         <Card>
           <CardContent className="pt-6">
             <div className="grid grid-cols-5 gap-2">

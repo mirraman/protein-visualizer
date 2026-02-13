@@ -20,7 +20,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera, Html } from "@react-three/drei";
 import ProteinModel from "./protein-model";
 import { PopulationVisualizer } from "./population-visualizer";
-import { PopulationVisualizer } from "./population-visualizer";
+import { ConnectionDetailsTable } from "./connection-details-table";
 import {
   LineChart,
   Line,
@@ -119,6 +119,7 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
   const [saveGenerations, setSaveGenerations] = useState(false);
   const [showPopulationView, setShowPopulationView] = useState(false);
   const [savedGenerations, setSavedGenerations] = useState<any[]>([]);
+  const [showConnectionTable, setShowConnectionTable] = useState(false);
 
   // Session for userId
   const { data: session } = useSession();
@@ -789,13 +790,23 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex justify-between items-center">
                   <span>Visualization</span>
-                  <Button variant="outline" size="sm" onClick={handleExportImage} title="Export as Image">
-                    <Download className="h-4 w-4 mr-1" />
-                    Export
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setShowConnectionTable(!showConnectionTable)}
+                      title="Show Connection Details"
+                    >
+                      {showConnectionTable ? "Hide" : "Show"} Connections
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleExportImage} title="Export as Image">
+                      <Download className="h-4 w-4 mr-1" />
+                      Export
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <div className="h-48 bg-gray-50 rounded-md overflow-hidden">
                   <Canvas
                     gl={{ preserveDrawingBuffer: true }}
@@ -850,6 +861,16 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                     )}
                   </Canvas>
                 </div>
+                
+                {/* Connection Details Table */}
+                {showConnectionTable && bestConformation && (
+                  <ConnectionDetailsTable
+                    sequence={bestConformation.sequence}
+                    directions={bestConformation.directions}
+                    positions={bestConformation.positions}
+                    title={`Connection Details - Best Conformation (${algorithmType.toUpperCase()})`}
+                  />
+                )}
               </CardContent>
             </Card>
 
@@ -1017,6 +1038,18 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                     <div className="text-sm text-gray-600">Best Directions</div>
                   </div>
                 </div>
+                
+                {/* Connection Details Table in Details Section */}
+                {showConnectionTable && currentResult.bestConformation && (
+                  <div className="mt-4">
+                    <ConnectionDetailsTable
+                      sequence={currentResult.bestConformation.sequence}
+                      directions={currentResult.bestConformation.directions}
+                      positions={currentResult.bestConformation.positions}
+                      title={`Connection Details - Best Conformation (${algorithmType.toUpperCase()})`}
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

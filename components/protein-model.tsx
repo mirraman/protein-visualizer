@@ -76,7 +76,7 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
   // Model is static; no rotation/animation refs required
 
   // Generate positions for each amino acid in the sequence
-  const { positions, bonds, hhContacts } = useMemo(() => {
+  const { positions, bonds, hhContacts, computedDirections } = useMemo(() => {
     const positions: Position[] = [];
     const bonds: [number, number][] = [];
 
@@ -121,7 +121,7 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
     // Calculate H-H contacts
     const hhContacts = calculateHHContacts(sequence, positions);
 
-    return { positions, bonds, hhContacts };
+    return { positions, bonds, hhContacts, computedDirections: dirs };
   }, [sequence, directions, type]);
 
   // No animation: the protein model remains completely static
@@ -303,18 +303,36 @@ const ProteinModel: React.FC<ProteinModelProps> = ({
             />
           ))}
 
-          {/* Render sequential bonds as lines (gray, thinner) */}
-          {bonds.map(([i, j], index) => (
-            <Line
-              key={`bond-${index}`}
-              points={[
-                [positions[i].x, positions[i].y, positions[i].z],
-                [positions[j].x, positions[j].y, positions[j].z],
-              ]}
-              color="#666666" // Gray for sequential bonds
-              lineWidth={1.5}
-            />
-          ))}
+          {/* Render sequential bonds as lines with direction-based colors */}
+          {bonds.map(([i, j], index) => {
+            // Get direction for this bond to color-code it
+            const direction = computedDirections && computedDirections[index] ? computedDirections[index] : null;
+            let bondColor = "#666666"; // Default gray
+            
+            // Color-code by direction for better visibility
+            if (direction) {
+              switch (direction) {
+                case "R": bondColor = "#3b82f6"; break; // Blue for Right
+                case "L": bondColor = "#ef4444"; break; // Red for Left
+                case "U": bondColor = "#10b981"; break; // Green for Up
+                case "D": bondColor = "#f59e0b"; break; // Orange for Down
+                case "F": bondColor = "#8b5cf6"; break; // Purple for Forward
+                case "B": bondColor = "#ec4899"; break; // Pink for Backward
+              }
+            }
+            
+            return (
+              <Line
+                key={`bond-${index}`}
+                points={[
+                  [positions[i].x, positions[i].y, positions[i].z],
+                  [positions[j].x, positions[j].y, positions[j].z],
+                ]}
+                color={bondColor}
+                lineWidth={2.5} // Thicker for better visibility
+              />
+            );
+          })}
 
           {/* Render amino acids: flat discs for 2D, spheres for 3D */}
           {positions.map((pos, index) => (

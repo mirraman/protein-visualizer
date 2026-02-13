@@ -60,6 +60,10 @@ const ExportOptions = dynamic(() => import("@/components/export-options"), {
   ssr: false,
   loading: () => null,
 });
+const ConnectionDetailsTable = dynamic(
+  () => import("@/components/connection-details-table").then(mod => ({ default: mod.ConnectionDetailsTable })),
+  { ssr: false, loading: () => null }
+);
 import { getPublicProteins, saveProtein } from "@/app/actions";
 import { SavedContentDialog } from "./saved-content-dialog";
 import { Direction } from "@/lib/types";
@@ -104,6 +108,7 @@ const ProteinVisualizer = () => {
   const [isCanvasFullscreen, setIsCanvasFullscreen] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [fullscreenCanvasReady, setFullscreenCanvasReady] = useState(false);
+  const [showConnectionTable, setShowConnectionTable] = useState(false);
   const { toast } = useToast();
   const { data: session } = useSession();
   const [comparisonSaved, setComparisonSaved] = useState(false);
@@ -840,7 +845,24 @@ const ProteinVisualizer = () => {
                         </Suspense>
                       </Canvas>
                     </div>
-                    <div className="w-full h-[500px] overflow-y-auto">
+                    <div className="w-full h-[500px] overflow-y-auto space-y-4">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-sm font-semibold">Analysis</h3>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowConnectionTable(!showConnectionTable)}
+                        >
+                          {showConnectionTable ? "Hide" : "Show"} Connection Table
+                        </Button>
+                      </div>
+                      {showConnectionTable && (
+                        <ConnectionDetailsTable
+                          sequence={proteinData.sequence}
+                          directions={proteinData.directions}
+                          title="Chain Connection Details"
+                        />
+                      )}
                       <ProteinAnalysis proteinData={proteinData} />
                     </div>
                   </div>

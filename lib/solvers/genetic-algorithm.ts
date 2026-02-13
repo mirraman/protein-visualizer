@@ -1,9 +1,7 @@
-// Importăm calculatorul de energie
-import { EnergyCalculator } from "./energy-calculator";
-
 // Importăm clasele de bază și tipurile
 import { BaseSolver, type SolverResult, type Conformation, type GeneticAlgorithmParameters } from "./types";
 import type { Direction } from "../types";
+import * as GAEnergyCalculator from "./ga-energy-calculator";
 import GAPopulation, { type IChromosome } from "../models/GAPopulation";
 import { connectDB } from "../mongodb";
 import mongoose from "mongoose";
@@ -116,14 +114,14 @@ export class GeneticAlgorithmSolver extends BaseSolver {
         childDirsA = this.mutate(childDirsA);
         childDirsB = this.mutate(childDirsB);
 
-        // EVALUARE: Calculăm fitness-ul (energia) copiilor
+        // EVALUARE: Calculăm fitness-ul (energia) copiilor folosind calculatorul specific GA
         const childA: Individual = {
           directions: childDirsA,
-          energy: EnergyCalculator.calculateEnergy(this.sequence, childDirsA)
+          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsA)
         };
         const childB: Individual = {
           directions: childDirsB,
-          energy: EnergyCalculator.calculateEnergy(this.sequence, childDirsB)
+          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsB)
         };
 
         // Adăugăm copiii în noua generație
@@ -171,7 +169,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
-      positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
+      positions: GAEnergyCalculator.calculatePositions(this.sequence, best.directions),
       energy: best.energy
     };
 
@@ -194,8 +192,8 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     for (let i = 0; i < this.populationSize; i++) {
       // Generăm un cromozom aleatoriu
       const directions = this.generateInitialDirections();
-      // Calculăm fitness-ul (energia)
-      const energy = EnergyCalculator.calculateEnergy(this.sequence, directions);
+      // Calculăm fitness-ul (energia) folosind calculatorul specific GA
+      const energy = GAEnergyCalculator.calculateEnergy(this.sequence, directions);
       // Adăugăm individul în populație
       individuals.push({ directions, energy });
     }
@@ -215,11 +213,9 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       // Generate random directions
       const candidate = this.generateRandomDirections().slice(0, length);
 
-      // Check if valid using your EnergyCalculator
-      // (You might need to expose a helper for this or calculate energy directly)
-      const positions = EnergyCalculator.calculatePositions(this.sequence, candidate);
-      // Assuming you updated EnergyCalculator to expose a check or use the countCollisions logic
-      if (this.isValid(positions)) {
+      // Verifică dacă conformația este validă folosind calculatorul specific GA
+      const positions = GAEnergyCalculator.calculatePositions(this.sequence, candidate);
+      if (GAEnergyCalculator.isValid(positions)) {
         return candidate;
       }
       attempts++;
@@ -357,14 +353,6 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     );
   }
 
-  /**
-   * Verifică dacă o conformație este validă (fără coliziuni)
-   * @param positions - Array cu pozițiile aminoacizilor
-   * @returns boolean - true dacă nu există coliziuni
-   */
-  private isValid(positions: { x: number; y: number; z: number }[]): boolean {
-    return EnergyCalculator.countCollisions(positions) === 0;
-  }
 
   /**
    * Calculează numărul de contacte H-H pentru o conformație
@@ -404,10 +392,10 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     try {
       // Convertește populația în format pentru DB
       const chromosomes: IChromosome[] = this.population.map(ind => {
-        const positions = EnergyCalculator.calculatePositions(this.sequence, ind.directions);
+        const positions = GAEnergyCalculator.calculatePositions(this.sequence, ind.directions);
         
         // Calculează numărul de contacte H-H
-        const hhContacts = this.calculateHHContacts(this.sequence, positions);
+        const hhContacts = GAEnergyCalculator.calculateHHContacts(this.sequence, positions);
         
         return {
           directions: ind.directions,
