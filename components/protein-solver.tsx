@@ -240,6 +240,10 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
       // Run solver with progress updates
       const result = await solver.solve();
 
+      // Cleanup: Setăm solver-ul la null pentru a permite garbage collection
+      // Cromozomii din memorie vor fi eliberați automat când solver-ul este garbage collected
+      solver = null as any;
+
       setCurrentResult(result);
       setBestConformation(result.bestConformation);
       setProgress(100);

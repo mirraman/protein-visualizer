@@ -186,6 +186,10 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       energy: best.energy
     };
 
+    // Cleanup: Eliberăm memoria populației după ce algoritmul s-a terminat
+    // Acest lucru ajută garbage collector-ul să elibereze cromozomii din memorie
+    this.population = [];
+
     return {
       bestConformation,
       energyHistory,
@@ -537,8 +541,9 @@ export class GeneticAlgorithmSolver extends BaseSolver {
         experimentName: this.experimentName,
       });
 
-      // Nu golim populația din memorie aici pentru că algoritmul mai are nevoie de ea
-      // Populația va fi înlocuită la următoarea iterație
+      // Notă: Nu golim populația din memorie aici pentru că algoritmul mai are nevoie de ea
+      // Populația va fi înlocuită la următoarea iterație (linia 148: this.population = nextPopulation)
+      // Aceasta permite garbage collector-ului să elibereze automat vechea populație
     } catch (error) {
       console.error(`Error saving generation ${generation}:`, error);
       // Nu aruncăm eroare - continuăm algoritmul chiar dacă salvare eșuează
