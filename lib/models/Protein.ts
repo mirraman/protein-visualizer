@@ -44,7 +44,7 @@ const proteinSchema = new mongoose.Schema({
 })
 
 // Drop the existing model if it exists to ensure schema changes take effect
-if (mongoose.models.Protein) {
+if (mongoose.models && mongoose.models.Protein) {
   delete mongoose.models.Protein
 }
 

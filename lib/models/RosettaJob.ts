@@ -91,7 +91,7 @@ const rosettaJobSchema = new mongoose.Schema({
 // Ensure the model is properly registered
 let RosettaJob: mongoose.Model<IRosettaJob>
 
-if (mongoose.models.RosettaJob) {
+if (mongoose.models && mongoose.models.RosettaJob) {
   RosettaJob = mongoose.models.RosettaJob
 } else {
   RosettaJob = mongoose.model<IRosettaJob>('RosettaJob', rosettaJobSchema)

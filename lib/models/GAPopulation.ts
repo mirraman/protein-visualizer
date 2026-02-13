@@ -77,7 +77,7 @@ gaPopulationSchema.index({ sequence: 1, generation: 1 });
 gaPopulationSchema.index({ userId: 1, sequence: 1, generation: 1 });
 
 // Drop the existing model if it exists to ensure schema changes take effect
-if (mongoose.models.GAPopulation) {
+if (mongoose.models && mongoose.models.GAPopulation) {
   delete mongoose.models.GAPopulation
 }
 
