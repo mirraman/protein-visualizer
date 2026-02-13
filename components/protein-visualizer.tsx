@@ -19,7 +19,6 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -105,8 +104,6 @@ const ProteinVisualizer = () => {
     ProteinSequence[]
   >([]);
   const [isCanvasFullscreen, setIsCanvasFullscreen] = useState(false);
-  const [canvasReady, setCanvasReady] = useState(false);
-  const [fullscreenCanvasReady, setFullscreenCanvasReady] = useState(false);
   const [showConnectionTable, setShowConnectionTable] = useState(false);
   // Store solver results separately
   const [solverResult, setSolverResult] = useState<{
@@ -182,17 +179,6 @@ const ProteinVisualizer = () => {
     fetchSavedContent();
   }, [toast, session?.user?.id]);
 
-  // Reset canvas ready states when visualization type changes
-  useEffect(() => {
-    setCanvasReady(false);
-    setFullscreenCanvasReady(false);
-  }, [visualizationType]);
-
-  // Reset canvas ready states when protein data changes
-  useEffect(() => {
-    setCanvasReady(false);
-    setFullscreenCanvasReady(false);
-  }, [proteinData]);
 
   const handleVisualize = (e: React.FormEvent) => {
     e.preventDefault();
@@ -812,10 +798,6 @@ const ProteinVisualizer = () => {
                 open={isCanvasFullscreen}
                 onOpenChange={(open) => {
                   setIsCanvasFullscreen(open);
-                  // Reset fullscreen canvas ready state when dialog is opened
-                  if (open) {
-                    setFullscreenCanvasReady(false);
-                  }
                 }}
               >
                 <DialogContent className="max-w-[90vw] w-[90vw] h-[90vh]">
@@ -823,14 +805,8 @@ const ProteinVisualizer = () => {
                     <DialogTitle>Protein Visualization</DialogTitle>
                   </DialogHeader>
                   <div className="w-full h-full bg-gray-50 rounded-lg relative">
-                    {!fullscreenCanvasReady && (
-                      <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
-                        <Skeleton className="h-full w-full" />
-                      </div>
-                    )}
                     <Canvas
                       style={{ width: "100%", height: "100%" }}
-                      onCreated={() => setFullscreenCanvasReady(true)}
                     >
                       <OrthographicCamera
                         makeDefault
@@ -934,14 +910,8 @@ const ProteinVisualizer = () => {
                         </CardHeader>
                         <CardContent className="pb-4">
                           <div className="relative w-full h-[450px] bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
-                            {!canvasReady && (
-                              <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
-                                <Skeleton className="h-full w-full" />
-                              </div>
-                            )}
                             <Canvas
                               style={{ width: "100%", height: "100%" }}
-                              onCreated={() => setCanvasReady(true)}
                             >
                               <OrthographicCamera
                                 makeDefault
@@ -1302,17 +1272,19 @@ const ProteinVisualizer = () => {
           </Card>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <SavedContentDialog
-            onLoadProtein={handleLoadProtein}
-            onAddToComparison={handleAddToComparison}
-            onLoadComparison={handleLoadComparison}
-            onComparisonSaved={() => setComparisonSaved((prev) => !prev)}
-          />
+        <div className="grid grid-cols-2 gap-4 items-start">
+          <div className="self-start">
+            <SavedContentDialog
+              onLoadProtein={handleLoadProtein}
+              onAddToComparison={handleAddToComparison}
+              onLoadComparison={handleLoadComparison}
+              onComparisonSaved={() => setComparisonSaved((prev) => !prev)}
+            />
+          </div>
 
           {/* Actions Card */}
           {proteinData && (
-            <Card className="p-4">
+            <Card className="p-4 self-start">
               <h2 className="text-lg font-semibold text-primary mb-4">
                 Actions
               </h2>
