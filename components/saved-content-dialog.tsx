@@ -290,7 +290,7 @@ export function SavedContentDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="w-full h-fit">
+        <Button className="w-full">
           <Database className="w-4 h-4 mr-2" /> Browse Saved Content
         </Button>
       </DialogTrigger>

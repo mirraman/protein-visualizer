@@ -768,6 +768,16 @@ const ProteinVisualizer = () => {
                   </Button>
                 </div>
               </form>
+              
+              {/* Browse Saved Content Button - Inside the left card */}
+              <div className="mt-6">
+                <SavedContentDialog
+                  onLoadProtein={handleLoadProtein}
+                  onAddToComparison={handleAddToComparison}
+                  onLoadComparison={handleLoadComparison}
+                  onComparisonSaved={() => setComparisonSaved((prev) => !prev)}
+                />
+              </div>
             </div>
           </Card>
 
@@ -1273,12 +1283,8 @@ const ProteinVisualizer = () => {
         </div>
 
         <div className="grid grid-cols-2 gap-4 items-start">
-          <SavedContentDialog
-            onLoadProtein={handleLoadProtein}
-            onAddToComparison={handleAddToComparison}
-            onLoadComparison={handleLoadComparison}
-            onComparisonSaved={() => setComparisonSaved((prev) => !prev)}
-          />
+          {/* Left column is now empty - button moved inside left card */}
+          <div></div>
 
           {/* Actions Card */}
           {proteinData && (
