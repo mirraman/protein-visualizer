@@ -108,6 +108,14 @@ const ProteinVisualizer = () => {
   const [canvasReady, setCanvasReady] = useState(false);
   const [fullscreenCanvasReady, setFullscreenCanvasReady] = useState(false);
   const [showConnectionTable, setShowConnectionTable] = useState(false);
+  // Store solver results separately
+  const [solverResult, setSolverResult] = useState<{
+    sequence: string;
+    directions: Direction[];
+    positions: Array<{ x: number; y: number; z: number }>;
+    energy: number;
+    hhContacts?: number;
+  } | null>(null);
   const { toast } = useToast();
   const { data: session } = useSession();
   const [comparisonSaved, setComparisonSaved] = useState(false);
@@ -353,7 +361,9 @@ const ProteinVisualizer = () => {
 
   const handleOptimizationComplete = (
     optimizedDirections: Direction[],
-    energy: number
+    energy: number,
+    positions?: Array<{ x: number; y: number; z: number }>,
+    hhContacts?: number
   ) => {
     setDirections(directionsToString(optimizedDirections));
     setProteinData((prev) => {
@@ -363,6 +373,27 @@ const ProteinVisualizer = () => {
         directions: optimizedDirections,
       };
     });
+
+    // Store solver results for connection visualization
+    // Use proteinData sequence if available, otherwise use the sequence from the solver
+    const resultSequence = proteinData?.sequence || sequence;
+    if (resultSequence) {
+      setSolverResult({
+        sequence: resultSequence,
+        directions: optimizedDirections,
+        positions: positions || [],
+        energy,
+        hhContacts,
+      });
+      
+      // Also update proteinData with solver results for visualization
+      if (proteinData) {
+        setProteinData({
+          ...proteinData,
+          directions: optimizedDirections,
+        });
+      }
+    }
 
     toast({
       title: "Solver Complete",
@@ -837,12 +868,12 @@ const ProteinVisualizer = () => {
                 </DialogContent>
               </Dialog>
 
-              <TabsContent value="solver" className="space-y-4">
+              <TabsContent value="solver" className="mt-4">
                 {/* Split View: Solver Controls + Visualization & Analysis */}
                 {proteinData ? (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {/* Left: Solver Controls */}
-                    <div className="space-y-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    {/* Left: Solver Controls (1 column) */}
+                    <div className="xl:col-span-1">
                       <ProteinSolver
                         sequence={proteinData.sequence}
                         initialDirections={proteinData.directions}
@@ -850,13 +881,13 @@ const ProteinVisualizer = () => {
                       />
                     </div>
 
-                    {/* Right: Visualization & Analysis */}
-                    <div className="space-y-4">
+                    {/* Right: Visualization & Analysis (2 columns) */}
+                    <div className="xl:col-span-2 space-y-4">
                       {/* Visualization */}
                       <Card>
-                        <CardHeader className="pb-2">
+                        <CardHeader className="pb-3">
                           <div className="flex justify-between items-center">
-                            <CardTitle className="text-lg">Visualization</CardTitle>
+                            <CardTitle className="text-lg font-semibold">3D Visualization</CardTitle>
                             <div className="flex gap-2">
                               <Select
                                 value={visualizationType}
@@ -864,7 +895,7 @@ const ProteinVisualizer = () => {
                                   setVisualizationType(value)
                                 }
                               >
-                                <SelectTrigger className="w-[140px]">
+                                <SelectTrigger className="w-[140px] h-9">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -882,6 +913,7 @@ const ProteinVisualizer = () => {
                                 size="sm"
                                 onClick={() => setIsCanvasFullscreen(true)}
                                 title="Fullscreen"
+                                className="h-9"
                               >
                                 <svg
                                   xmlns="http://www.w3.org/2000/svg"
@@ -900,8 +932,8 @@ const ProteinVisualizer = () => {
                             </div>
                           </div>
                         </CardHeader>
-                        <CardContent>
-                          <div className="relative w-full h-[400px] bg-gray-50 rounded-lg group">
+                        <CardContent className="pb-4">
+                          <div className="relative w-full h-[450px] bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
                             {!canvasReady && (
                               <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
                                 <Skeleton className="h-full w-full" />
@@ -938,8 +970,8 @@ const ProteinVisualizer = () => {
                               />
                               <Suspense fallback={null}>
                                 <ProteinModel
-                                  sequence={proteinData.sequence}
-                                  directions={proteinData.directions}
+                                  sequence={solverResult?.sequence || proteinData.sequence}
+                                  directions={solverResult?.directions || proteinData.directions}
                                   type={visualizationType}
                                   showHHContacts={true}
                                 />
@@ -950,24 +982,51 @@ const ProteinVisualizer = () => {
                       </Card>
 
                       {/* Real-time Analysis Panel */}
-                      <RealtimeAnalysisPanel
-                        sequence={proteinData.sequence}
-                        directions={proteinData.directions}
-                        showConnectionTable={showConnectionTable}
-                        onToggleConnectionTable={() =>
-                          setShowConnectionTable(!showConnectionTable)
-                        }
-                      />
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-lg font-semibold">Analysis & Connections</CardTitle>
+                        </CardHeader>
+                        <CardContent className="pb-4">
+                          <div className="max-h-[500px] overflow-y-auto">
+                            <RealtimeAnalysisPanel
+                              sequence={solverResult?.sequence || proteinData.sequence}
+                              directions={solverResult?.directions || proteinData.directions}
+                              positions={solverResult?.positions}
+                              currentEnergy={solverResult?.energy}
+                              hhContacts={solverResult?.hhContacts}
+                              showConnectionTable={showConnectionTable}
+                              onToggleConnectionTable={() =>
+                                setShowConnectionTable(!showConnectionTable)
+                              }
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     <Card>
                       <CardContent className="pt-6">
-                        <div className="text-center text-muted-foreground py-8">
-                          <p className="mb-2">Enter a protein sequence and click Visualize</p>
-                          <p className="text-sm">
-                            Then use the Solver to optimize the folding
+                        <div className="text-center text-muted-foreground py-12">
+                          <div className="mb-4">
+                            <svg
+                              className="mx-auto h-12 w-12 text-gray-400"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                              />
+                            </svg>
+                          </div>
+                          <p className="text-lg font-medium mb-2">Enter a protein sequence and click Visualize</p>
+                          <p className="text-sm text-gray-500">
+                            Then use the Solver to optimize the folding and see detailed connections
                           </p>
                         </div>
                       </CardContent>

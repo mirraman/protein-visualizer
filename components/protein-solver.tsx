@@ -42,7 +42,12 @@ import {
 interface ProteinSolverProps {
   sequence: string;
   initialDirections?: Direction[];
-  onOptimizationComplete: (directions: Direction[], energy: number) => void;
+  onOptimizationComplete: (
+    directions: Direction[],
+    energy: number,
+    positions?: Array<{ x: number; y: number; z: number }>,
+    hhContacts?: number
+  ) => void;
 }
 
 interface ScreenshotHandle {
@@ -221,10 +226,29 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
       setBestConformation(result.bestConformation);
       setProgress(100);
 
-      // Notify parent component
+      // Calculate H-H contacts for the best conformation
+      let hhContacts = 0;
+      for (let i = 0; i < result.bestConformation.sequence.length; i++) {
+        if (result.bestConformation.sequence[i] === "H") {
+          for (let j = i + 2; j < result.bestConformation.sequence.length; j++) {
+            if (result.bestConformation.sequence[j] === "H") {
+              const dx = Math.abs(result.bestConformation.positions[i].x - result.bestConformation.positions[j].x);
+              const dy = Math.abs(result.bestConformation.positions[i].y - result.bestConformation.positions[j].y);
+              const dz = Math.abs(result.bestConformation.positions[i].z - result.bestConformation.positions[j].z);
+              if (dx + dy + dz === 1) {
+                hhContacts++;
+              }
+            }
+          }
+        }
+      }
+
+      // Notify parent component with full results
       onOptimizationComplete(
         result.bestConformation.directions,
-        result.bestConformation.energy
+        result.bestConformation.energy,
+        result.bestConformation.positions,
+        hhContacts
       );
     } catch (error) {
       console.error("Solver error:", error);
@@ -250,10 +274,8 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* Main Layout Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left Column: Configuration + Energy */}
-        <div className="space-y-4">
+      {/* Configuration Card */}
+      <div className="space-y-4">
           {/* Compact Algorithm Configuration */}
           <Card>
             <CardHeader className="pb-3">
@@ -612,106 +634,70 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
             </CardContent>
           </Card>
 
-          {/* Energy Windows - Smaller */}
+          {/* Energy Results - Compact */}
           {currentResult && (
-            <div className="grid grid-cols-2 gap-2">
-              <Card>
-                <CardContent className="pt-3 pb-3">
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-blue-600">
-                      {currentResult.bestConformation.energy}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Results</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="text-xl font-bold text-blue-700">
+                      {currentResult.bestConformation.energy.toFixed(2)}
                     </div>
-                    <div className="text-xs text-gray-600">Current Energy</div>
+                    <div className="text-xs text-gray-600 mt-1">Best Energy</div>
                   </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-3 pb-3">
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-green-600">
-                      {currentResult.bestConformation.energy}
+                  <div className="text-center p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="text-xl font-bold text-green-700">
+                      {currentResult.totalIterations}
                     </div>
-                    <div className="text-xs text-gray-600">Best Energy</div>
+                    <div className="text-xs text-gray-600 mt-1">Iterations</div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
+                </div>
+                
+                {/* Energy Evolution Chart - Compact */}
+                {currentResult.energyHistory && currentResult.energyHistory.length > 0 && (
+                  <div>
+                    <div className="text-sm font-medium mb-2 text-gray-700">Energy Evolution</div>
+                    <div className="h-32">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={currentResult.energyHistory}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis 
+                            dataKey="iteration" 
+                            tick={{ fontSize: 10 }}
+                            stroke="#6b7280"
+                          />
+                          <YAxis 
+                            tick={{ fontSize: 10 }}
+                            stroke="#6b7280"
+                          />
+                          <Tooltip 
+                            contentStyle={{ 
+                              fontSize: '12px',
+                              padding: '8px',
+                              backgroundColor: 'white',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '6px'
+                            }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="energy"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
         </div>
-
-        {/* Right Column: Visualization + Energy Evolution */}
-        {currentResult && bestConformation && (
-          <div className="space-y-4">
-            {/* Primary Visualization */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex justify-between items-center">
-                  <span>Visualization</span>
-                  <Button variant="outline" size="sm" onClick={handleExportImage} title="Export as Image">
-                    <Download className="h-4 w-4 mr-1" />
-                    Export
-                  </Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-48 bg-gray-50 rounded-md overflow-hidden">
-                  <Canvas gl={{ preserveDrawingBuffer: true }}>
-                    <OrthographicCamera
-                      makeDefault
-                      position={[0, 0, 10]}
-                      near={0.1}
-                      far={1000}
-                      zoom={40}
-                    />
-                    <ambientLight intensity={0.5} />
-                    <directionalLight position={[10, 10, 10]} intensity={1} />
-                    <OrbitControls
-                      enableRotate
-                      enablePan
-                      enableZoom
-                      screenSpacePanning
-                      target={[0, 0, 0]}
-                    />
-                    <ProteinModel
-                      sequence={bestConformation.sequence}
-                      directions={bestConformation.directions}
-                      type={latticeType.toLowerCase() as "2d" | "3d"}
-                    />
-                    <CanvasScreenshot ref={screenshotRef} />
-                  </Canvas>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Detailed Energy Evolution */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Energy Evolution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={currentResult.energyHistory}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="iteration" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="energy"
-                        stroke="#8884d8"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
 
       {/* Show Details Section */}
       {currentResult && (

@@ -64,9 +64,9 @@ export const SequencePatternAnalysis: React.FC<SequencePatternAnalysisProps> = (
       <CardHeader>
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {/* Statistics Grid */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div className="bg-red-50 p-3 rounded-md border border-red-200">
             <h3 className="text-sm font-medium text-gray-700">Hydrophobic (H)</h3>
             <p className="text-2xl font-bold text-red-700">{hydrophobicCount}</p>

@@ -98,18 +98,18 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
   }, [sequence, directions, positions, currentEnergy, hhContacts, collisions]);
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="w-full">
       <Tabs defaultValue="metrics" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          <TabsTrigger value="sequence">Sequence</TabsTrigger>
-          <TabsTrigger value="connections">Connections</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 mb-4">
+          <TabsTrigger value="metrics" className="text-sm">Metrics</TabsTrigger>
+          <TabsTrigger value="sequence" className="text-sm">Sequence</TabsTrigger>
+          <TabsTrigger value="connections" className="text-sm">Connections</TabsTrigger>
         </TabsList>
 
         {/* Metrics Tab */}
-        <TabsContent value="metrics" className="space-y-4 mt-4">
+        <TabsContent value="metrics" className="space-y-3 mt-0">
           {/* Real-time Metrics */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="bg-gray-50 p-3 rounded-md border">
               <h3 className="text-sm font-medium text-gray-700">Total Residues</h3>
               <p className="text-2xl font-bold text-indigo-700">{sequence.length}</p>
@@ -134,7 +134,7 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
           </div>
 
           {/* Collision and Contact Metrics */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div
               className={`p-3 rounded-md border ${
                 metrics.collisions > 0
@@ -174,11 +174,9 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
           )}
 
           {/* Analysis Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Analysis Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-gray-600 space-y-2">
+          <div className="bg-gray-50 p-3 rounded-md border border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">Analysis Summary</h4>
+            <div className="text-sm text-gray-600 space-y-2">
               <p>
                 <strong>Energy:</strong> {metrics.energy.toFixed(2)} (lower is better)
               </p>
@@ -188,27 +186,31 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
               <p>
                 <strong>H-H Contacts:</strong> {metrics.hydrophobicContacts}
               </p>
-              <p className="text-xs mt-3 pt-3 border-t">
+              <p className="text-xs mt-3 pt-3 border-t border-gray-300">
                 In the HP model, hydrophobic contacts contribute -1 energy each and
                 are the primary driving force for protein folding.
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
 
         {/* Sequence Tab */}
-        <TabsContent value="sequence" className="mt-4">
+        <TabsContent value="sequence" className="mt-0">
           <SequencePatternAnalysis sequence={sequence} />
         </TabsContent>
 
         {/* Connections Tab */}
-        <TabsContent value="connections" className="mt-4">
+        <TabsContent value="connections" className="mt-0">
           {directions && directions.length > 0 ? (
             <ConnectionDetailsTable
               sequence={sequence}
               directions={directions}
               positions={positions}
-              title="Chain Connection Details"
+              title={
+                positions && positions.length > 0
+                  ? "Chain Connection Details (Solver Result)"
+                  : "Chain Connection Details"
+              }
             />
           ) : (
             <Card>
