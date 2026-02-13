@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useState, useEffect } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,17 +34,12 @@ import {
   Download,
   Share2,
   BarChart2,
-  Layers,
   Atom,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 
 import dynamic from "next/dynamic";
 const ProteinModel = dynamic(() => import("@/components/protein-model"), {
-  ssr: false,
-  loading: () => null,
-});
-const ProteinAnalysis = dynamic(() => import("@/components/protein-analysis"), {
   ssr: false,
   loading: () => null,
 });
@@ -62,6 +57,10 @@ const ExportOptions = dynamic(() => import("@/components/export-options"), {
 });
 const ConnectionDetailsTable = dynamic(
   () => import("@/components/connection-details-table").then(mod => ({ default: mod.ConnectionDetailsTable })),
+  { ssr: false, loading: () => null }
+);
+const RealtimeAnalysisPanel = dynamic(
+  () => import("@/components/realtime-analysis-panel").then(mod => ({ default: mod.RealtimeAnalysisPanel })),
   { ssr: false, loading: () => null }
 );
 import { getPublicProteins, saveProtein } from "@/app/actions";
@@ -756,13 +755,9 @@ const ProteinVisualizer = () => {
           </Card>
 
           <Card className="p-6">
-            <Tabs defaultValue="visualization" className="h-full">
-              <TabsList className="grid w-full grid-cols-5">
-                <TabsTrigger value="visualization">
-                  <Layers className="w-4 h-4 mr-2" />
-                  Visualization
-                </TabsTrigger>
-                <TabsTrigger value="energy">
+            <Tabs defaultValue="solver" className="h-full">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="solver">
                   <BarChart2 className="w-4 h-4 mr-2" />
                   Solver
                 </TabsTrigger>
@@ -780,98 +775,6 @@ const ProteinVisualizer = () => {
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="visualization" className="mt-4 h-[500px]">
-                {proteinData ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="relative w-full h-[500px] bg-gray-50 rounded-lg group">
-                      {!canvasReady && (
-                        <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
-                          <Skeleton className="h-full w-full" />
-                        </div>
-                      )}
-                      <button
-                        onClick={() => setIsCanvasFullscreen(true)}
-                        className="absolute top-2 right-2 z-10 bg-black/50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="24"
-                          height="24"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                        </svg>
-                      </button>
-                      <Canvas
-                        style={{ width: "100%", height: "100%" }}
-                        onCreated={() => setCanvasReady(true)}
-                      >
-                        <OrthographicCamera
-                          makeDefault
-                          position={
-                            visualizationType === "2d" ? [0, 0, 20] : [0, 0, 10]
-                          }
-                          near={0.1}
-                          far={1000}
-                          zoom={visualizationType === "2d" ? 60 : 50}
-                        />
-                        <OrbitControls
-                          enableRotate={visualizationType !== "2d"}
-                          enablePan
-                          enableZoom
-                          screenSpacePanning
-                          target={[0, 0, 0]}
-                        />
-                        <ambientLight intensity={0.8} />
-                        <directionalLight
-                          position={[10, 10, 10]}
-                          intensity={1}
-                        />
-                        <directionalLight
-                          position={[-10, -10, -10]}
-                          intensity={0.5}
-                        />
-                        <Suspense fallback={null}>
-                          <ProteinModel
-                            sequence={proteinData.sequence}
-                            directions={proteinData.directions}
-                            type={visualizationType}
-                          />
-                        </Suspense>
-                      </Canvas>
-                    </div>
-                    <div className="w-full h-[500px] overflow-y-auto space-y-4">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-sm font-semibold">Analysis</h3>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowConnectionTable(!showConnectionTable)}
-                        >
-                          {showConnectionTable ? "Hide" : "Show"} Connection Table
-                        </Button>
-                      </div>
-                      {showConnectionTable && (
-                        <ConnectionDetailsTable
-                          sequence={proteinData.sequence}
-                          directions={proteinData.directions}
-                          title="Chain Connection Details"
-                        />
-                      )}
-                      <ProteinAnalysis proteinData={proteinData} />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full text-muted-foreground">
-                    Enter a protein sequence and click Visualize
-                  </div>
-                )}
-              </TabsContent>
 
               {/* Fullscreen Canvas Dialog */}
               <Dialog
@@ -934,12 +837,148 @@ const ProteinVisualizer = () => {
                 </DialogContent>
               </Dialog>
 
-              <TabsContent value="energy" className="space-y-4">
-                <ProteinSolver
-                  sequence={proteinData?.sequence || sequence}
-                  initialDirections={proteinData?.directions}
-                  onOptimizationComplete={handleOptimizationComplete}
-                />
+              <TabsContent value="solver" className="space-y-4">
+                {/* Split View: Solver Controls + Visualization & Analysis */}
+                {proteinData ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Left: Solver Controls */}
+                    <div className="space-y-4">
+                      <ProteinSolver
+                        sequence={proteinData.sequence}
+                        initialDirections={proteinData.directions}
+                        onOptimizationComplete={handleOptimizationComplete}
+                      />
+                    </div>
+
+                    {/* Right: Visualization & Analysis */}
+                    <div className="space-y-4">
+                      {/* Visualization */}
+                      <Card>
+                        <CardHeader className="pb-2">
+                          <div className="flex justify-between items-center">
+                            <CardTitle className="text-lg">Visualization</CardTitle>
+                            <div className="flex gap-2">
+                              <Select
+                                value={visualizationType}
+                                onValueChange={(value: VisualizationType) =>
+                                  setVisualizationType(value)
+                                }
+                              >
+                                <SelectTrigger className="w-[140px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="3d">3D Model</SelectItem>
+                                  <SelectItem value="2d">2D Model</SelectItem>
+                                  <SelectItem value="ribbon">Ribbon</SelectItem>
+                                  <SelectItem value="space-filling">
+                                    Space Filling
+                                  </SelectItem>
+                                  <SelectItem value="surface">Surface</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setIsCanvasFullscreen(true)}
+                                title="Fullscreen"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                              </Button>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="relative w-full h-[400px] bg-gray-50 rounded-lg group">
+                            {!canvasReady && (
+                              <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
+                                <Skeleton className="h-full w-full" />
+                              </div>
+                            )}
+                            <Canvas
+                              style={{ width: "100%", height: "100%" }}
+                              onCreated={() => setCanvasReady(true)}
+                            >
+                              <OrthographicCamera
+                                makeDefault
+                                position={
+                                  visualizationType === "2d" ? [0, 0, 20] : [0, 0, 10]
+                                }
+                                near={0.1}
+                                far={1000}
+                                zoom={visualizationType === "2d" ? 60 : 50}
+                              />
+                              <OrbitControls
+                                enableRotate={visualizationType !== "2d"}
+                                enablePan
+                                enableZoom
+                                screenSpacePanning
+                                target={[0, 0, 0]}
+                              />
+                              <ambientLight intensity={0.8} />
+                              <directionalLight
+                                position={[10, 10, 10]}
+                                intensity={1}
+                              />
+                              <directionalLight
+                                position={[-10, -10, -10]}
+                                intensity={0.5}
+                              />
+                              <Suspense fallback={null}>
+                                <ProteinModel
+                                  sequence={proteinData.sequence}
+                                  directions={proteinData.directions}
+                                  type={visualizationType}
+                                  showHHContacts={true}
+                                />
+                              </Suspense>
+                            </Canvas>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Real-time Analysis Panel */}
+                      <RealtimeAnalysisPanel
+                        sequence={proteinData.sequence}
+                        directions={proteinData.directions}
+                        showConnectionTable={showConnectionTable}
+                        onToggleConnectionTable={() =>
+                          setShowConnectionTable(!showConnectionTable)
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <Card>
+                      <CardContent className="pt-6">
+                        <div className="text-center text-muted-foreground py-8">
+                          <p className="mb-2">Enter a protein sequence and click Visualize</p>
+                          <p className="text-sm">
+                            Then use the Solver to optimize the folding
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <ProteinSolver
+                      sequence={sequence}
+                      initialDirections={undefined}
+                      onOptimizationComplete={handleOptimizationComplete}
+                    />
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent
