@@ -77,7 +77,8 @@ const ProteinAnalysis: React.FC<ProteinAnalysisProps> = ({ proteinData }) => {
         energy: energy === Number.POSITIVE_INFINITY ? 0 : energy,
         collisions,
         hydrophobicContacts,
-        isValid: energy !== Number.POSITIVE_INFINITY,
+        // Scientifically valid only when there are no collisions and energy is finite
+        isValid: energy !== Number.POSITIVE_INFINITY && collisions === 0,
       };
     } catch (error) {
       console.error("Error calculating metrics:", error);
@@ -114,7 +115,7 @@ const ProteinAnalysis: React.FC<ProteinAnalysisProps> = ({ proteinData }) => {
               metrics.isValid ? "text-green-700" : "text-red-700"
             }`}
           >
-            {metrics.energy}
+            {metrics.collisions > 0 ? "Invalid" : metrics.energy.toFixed(2)}
           </p>
         </div>
       </div>
@@ -204,8 +205,11 @@ const ProteinAnalysis: React.FC<ProteinAnalysisProps> = ({ proteinData }) => {
           Real-time Analysis
         </h3>
         <p className="text-sm text-gray-600">
-          Energy: {metrics.energy} (lower is better), Collisions:{" "}
-          {metrics.collisions} (0 is optimal), H-H Contacts:{" "}
+          Energy:{" "}
+          {metrics.collisions > 0
+            ? "Invalid (collisions present)"
+            : `${metrics.energy} (lower is better)`}{" "}
+          , Collisions: {metrics.collisions} (0 is optimal), H-H Contacts:{" "}
           {metrics.hydrophobicContacts}. In the HP model, hydrophobic contacts
           contribute -1 energy each and are the primary driving force for
           protein folding.

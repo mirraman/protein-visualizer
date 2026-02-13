@@ -84,7 +84,8 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
         energy: energy === Number.POSITIVE_INFINITY ? 0 : energy,
         collisions: collisionCount,
         hydrophobicContacts: contactCount,
-        isValid: energy !== Number.POSITIVE_INFINITY,
+        // Valid only when there are no collisions and energy is finite
+        isValid: energy !== Number.POSITIVE_INFINITY && collisionCount === 0,
       };
     } catch (error) {
       console.error("Error calculating metrics:", error);
@@ -125,10 +126,16 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
                   metrics.isValid ? "text-green-700" : "text-red-700"
                 }`}
               >
-                {metrics.energy.toFixed(2)}
+                {metrics.collisions > 0 ? "Invalid" : metrics.energy.toFixed(2)}
               </p>
               <p className="text-xs text-gray-600 mt-1">
-                {metrics.energy < 0 ? "Good (negative)" : metrics.energy === 0 ? "Neutral" : "Poor"}
+                {metrics.collisions > 0
+                  ? "Structure has collisions (physically invalid)"
+                  : metrics.energy < 0
+                  ? "Good (negative)"
+                  : metrics.energy === 0
+                  ? "Neutral"
+                  : "Poor"}
               </p>
             </div>
           </div>
@@ -178,7 +185,10 @@ export const RealtimeAnalysisPanel: React.FC<RealtimeAnalysisPanelProps> = ({
             <h4 className="text-sm font-semibold text-gray-700 mb-2">Analysis Summary</h4>
             <div className="text-sm text-gray-600 space-y-2">
               <p>
-                <strong>Energy:</strong> {metrics.energy.toFixed(2)} (lower is better)
+                <strong>Energy:</strong>{" "}
+                {metrics.collisions > 0
+                  ? "Invalid (collisions present)"
+                  : `${metrics.energy.toFixed(2)} (lower is better)`}
               </p>
               <p>
                 <strong>Collisions:</strong> {metrics.collisions} (0 is optimal)
