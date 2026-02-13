@@ -3,16 +3,18 @@ import { BaseSolver, type SolverResult, type Conformation, type GeneticAlgorithm
 import type { Direction } from "../types";
 import * as GAEnergyCalculator from "./ga-energy-calculator";
 import GAPopulation, { type IChromosome } from "../models/GAPopulation";
-import { connectDB } from "../mongodb";
+import connectDB from "../mongodb";
 import mongoose from "mongoose";
 
 /**
  * Tipul Individual - Reprezintă un cromozom în algoritm
- * Conține direcțiile (genele) și energia (fitness-ul)
+ * Conține direcțiile (genele), energia (fitness-ul) și numărul de coliziuni
+ * Folosit pentru lexicographic fitness: minimizăm coliziunile mai întâi, apoi energia
  */
 type Individual = {
   directions: Direction[];  // Cromozomul - secvența de direcții
-  energy: number;           // Fitness-ul - energia (mai mică = mai bună)
+  energy: number;           // Fitness-ul - energia HP (mai mică = mai bună)
+  collisions: number;       // Numărul de coliziuni (0 = valid, >0 = invalid)
 };
 
 /**
@@ -114,14 +116,25 @@ export class GeneticAlgorithmSolver extends BaseSolver {
         childDirsA = this.mutate(childDirsA);
         childDirsB = this.mutate(childDirsB);
 
-        // EVALUARE: Calculăm fitness-ul (energia) copiilor folosind calculatorul specific GA
+        // REPAIR: Reparăm cromozomii invalizi
+        childDirsA = this.repairChromosome(childDirsA);
+        childDirsB = this.repairChromosome(childDirsB);
+
+        // EVALUARE: Calculăm fitness-ul (energia și coliziunile) copiilor
+        const positionsA = GAEnergyCalculator.calculatePositions(this.sequence, childDirsA);
+        const collisionsA = GAEnergyCalculator.countCollisions(positionsA);
         const childA: Individual = {
           directions: childDirsA,
-          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsA)
+          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsA),
+          collisions: collisionsA
         };
+
+        const positionsB = GAEnergyCalculator.calculatePositions(this.sequence, childDirsB);
+        const collisionsB = GAEnergyCalculator.countCollisions(positionsB);
         const childB: Individual = {
           directions: childDirsB,
-          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsB)
+          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsB),
+          collisions: collisionsB
         };
 
         // Adăugăm copiii în noua generație
@@ -137,8 +150,8 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       // Găsim cel mai bun individ din noua generație
       const currentBest = this.getBestIndividual();
 
-      // Actualizăm cel mai bun global dacă am găsit ceva mai bun
-      if (currentBest.energy < best.energy) {
+      // Actualizăm cel mai bun global dacă am găsit ceva mai bun (lexicographic)
+      if (this.isBetter(currentBest, best)) {
         best = currentBest;
       }
 
@@ -183,19 +196,23 @@ export class GeneticAlgorithmSolver extends BaseSolver {
 
   /**
    * Inițializează populația cu indivizi aleatorii
-   * Fiecare individ are un cromozom (direcții) generat aleatoriu
+   * Fiecare individ are un cromozom (direcții) generat folosind Self-Avoiding Walk (SAW)
+   * SAW-urile asigură că populația inițială are calitate bună (fără coliziuni)
    */
   private initializePopulation(): Individual[] {
     const individuals: Individual[] = [];
 
     // Creăm populationSize indivizi
     for (let i = 0; i < this.populationSize; i++) {
-      // Generăm un cromozom aleatoriu
+      // Generăm un cromozom folosind Self-Avoiding Walk (bias initialization)
       const directions = this.generateInitialDirections();
+      // Calculăm pozițiile și coliziunile
+      const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
+      const collisions = GAEnergyCalculator.countCollisions(positions);
       // Calculăm fitness-ul (energia) folosind calculatorul specific GA
       const energy = GAEnergyCalculator.calculateEnergy(this.sequence, directions);
-      // Adăugăm individul în populație
-      individuals.push({ directions, energy });
+      // Adăugăm individul în populație cu informații complete
+      individuals.push({ directions, energy, collisions });
     }
 
     return individuals;
@@ -230,14 +247,24 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    * ELITISM - Selectează cei mai buni k indivizi
    * Aceștia sunt copiați direct în noua generație fără modificări
    * 
+   * Folosește lexicographic fitness: minimizăm coliziunile mai întâi, apoi energia
+   * 
    * @param k - Numărul de elită de selectat
    * @returns Array cu cei mai buni k indivizi
    */
   private getElites(k: number): Individual[] {
-    // Sortăm populația după energie (crescător - cei mai buni primii)
-    // și luăm primii k indivizi
+    // Sortăm populația folosind lexicographic fitness:
+    // 1. Mai întâi după coliziuni (0 = valid, mai mic = mai bun)
+    // 2. Apoi după energie (mai mic = mai bun)
     return [...this.population]
-      .sort((a, b) => a.energy - b.energy)
+      .sort((a, b) => {
+        // Primul criteriu: coliziuni (0 este cel mai bun)
+        if (a.collisions !== b.collisions) {
+          return a.collisions - b.collisions;
+        }
+        // Al doilea criteriu: energie (mai mic = mai bun)
+        return a.energy - b.energy;
+      })
       .slice(0, Math.min(k, this.population.length));
   }
 
@@ -246,7 +273,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    * 
    * PRINCIPIU:
    * 1. Alegem tournamentSize indivizi aleatoriu din populație
-   * 2. Cel cu cel mai bun fitness (energie minimă) câștigă
+   * 2. Cel cu cel mai bun fitness câștigă (lexicographic: coliziuni mai întâi, apoi energie)
    * 
    * Avantaj: presiune de selecție ajustabilă prin dimensiunea turnirului
    * - Turnir mare (5-10) = presiune mare (doar cei foarte buni se reproduc)
@@ -261,11 +288,15 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       picks.push(this.population[idx]);
     }
 
-    // Returnăm cel mai bun din turnir (energia minimă)
-    return picks.reduce((best, cur) =>
-      (cur.energy < best.energy ? cur : best),
-      picks[0]
-    );
+    // Returnăm cel mai bun din turnir folosind lexicographic fitness
+    return picks.reduce((best, cur) => {
+      // Primul criteriu: coliziuni (0 este cel mai bun)
+      if (cur.collisions !== best.collisions) {
+        return cur.collisions < best.collisions ? cur : best;
+      }
+      // Al doilea criteriu: energie (mai mic = mai bun)
+      return cur.energy < best.energy ? cur : best;
+    }, picks[0]);
   }
 
   /**
@@ -343,14 +374,99 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   }
 
   /**
+   * REPAIR - Repară cromozomii invalizi după mutație/crossover 
+   * 
+   * Strategie:
+   * 1. Detectează prima coliziune
+   * 2. Încearcă să reruteze local calea pentru a evita coliziunea
+   * 3. Dacă nu reușește, resamplează direcțiile de la punctul de coliziune
+   * 
+   * @param directions - Direcțiile de reparat
+   * @returns Direcțiile reparate (sau resampleate dacă repararea eșuează)
+   */
+  private repairChromosome(directions: Direction[]): Direction[] {
+    const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
+    const collisions = GAEnergyCalculator.countCollisions(positions);
+
+    // Dacă nu există coliziuni, returnăm direcțiile neschimbate
+    if (collisions === 0) {
+      return directions;
+    }
+
+    // Detectăm prima coliziune
+    const occupied = new Set<string>();
+    let collisionIndex = -1;
+
+    for (let i = 0; i < positions.length; i++) {
+      const posKey = `${positions[i].x},${positions[i].y},${positions[i].z}`;
+      if (occupied.has(posKey)) {
+        collisionIndex = i;
+        break;
+      }
+      occupied.add(posKey);
+    }
+
+    // Dacă nu găsim coliziune (nu ar trebui să se întâmple), returnăm originalul
+    if (collisionIndex === -1) {
+      return directions;
+    }
+
+    // Încearcă să reruteze local: resamplează direcțiile de la punctul de coliziune
+    const repaired = directions.slice();
+    const maxRepairAttempts = 10;
+
+    for (let attempt = 0; attempt < maxRepairAttempts; attempt++) {
+      // Resamplează direcțiile de la coliziune până la sfârșit
+      for (let i = collisionIndex - 1; i < repaired.length; i++) {
+        if (i >= 0) {
+          repaired[i] = this.possibleDirections[
+            Math.floor(Math.random() * this.possibleDirections.length)
+          ];
+        }
+      }
+
+      // Verifică dacă repararea a reușit
+      const newPositions = GAEnergyCalculator.calculatePositions(this.sequence, repaired);
+      if (GAEnergyCalculator.countCollisions(newPositions) === 0) {
+        return repaired;
+      }
+    }
+
+    // Dacă repararea locală eșuează, resamplează complet folosind SAW
+    return this.generateInitialDirections();
+  }
+
+  /**
+   * Compară doi indivizi folosind lexicographic fitness (Fix 4)
+   * Primul criteriu: coliziuni (mai puține = mai bun)
+   * Al doilea criteriu: energie (mai mică = mai bun)
+   * 
+   * @param a - Primul individ
+   * @param b - Al doilea individ
+   * @returns true dacă a este mai bun decât b
+   */
+  private isBetter(a: Individual, b: Individual): boolean {
+    // Primul criteriu: coliziuni
+    if (a.collisions !== b.collisions) {
+      return a.collisions < b.collisions;
+    }
+    // Al doilea criteriu: energie
+    return a.energy < b.energy;
+  }
+
+  /**
    * Găsește și returnează cel mai bun individ din populație
-   * (cel cu energia minimă)
+   * Folosește lexicographic fitness: minimizăm coliziunile mai întâi, apoi energia
    */
   private getBestIndividual(): Individual {
-    return this.population.reduce((best, cur) =>
-      (cur.energy < best.energy ? cur : best),
-      this.population[0]
-    );
+    return this.population.reduce((best, cur) => {
+      // Primul criteriu: coliziuni (0 este cel mai bun)
+      if (cur.collisions !== best.collisions) {
+        return cur.collisions < best.collisions ? cur : best;
+      }
+      // Al doilea criteriu: energie (mai mic = mai bun)
+      return cur.energy < best.energy ? cur : best;
+    }, this.population[0]);
   }
 
 
@@ -393,10 +509,10 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       // Convertește populația în format pentru DB
       const chromosomes: IChromosome[] = this.population.map(ind => {
         const positions = GAEnergyCalculator.calculatePositions(this.sequence, ind.directions);
-        
+
         // Calculează numărul de contacte H-H
         const hhContacts = GAEnergyCalculator.calculateHHContacts(this.sequence, positions);
-        
+
         return {
           directions: ind.directions,
           energy: ind.energy,

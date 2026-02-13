@@ -16,23 +16,23 @@ import type { Position } from "./types";
  */
 export function calculatePositions(sequence: string, directions: Direction[]): Position[] {
   const positions: Position[] = [];
-  
+
   // Primul aminoacid la origine
   positions.push({ x: 0, y: 0, z: 0 });
-  
+
   // Pentru fiecare aminoacid următor
   for (let i = 1; i < sequence.length; i++) {
     const prevPos = positions[i - 1];
     const direction = directions[i - 1];
     const positionChange = directionToPosition(direction);
-    
+
     positions.push({
       x: prevPos.x + positionChange.x,
       y: prevPos.y + positionChange.y,
       z: prevPos.z + positionChange.z,
     });
   }
-  
+
   return positions;
 }
 
@@ -44,7 +44,7 @@ export function calculatePositions(sequence: string, directions: Direction[]): P
 export function countCollisions(positions: Position[]): number {
   const occupied = new Set<string>();
   let collisionCount = 0;
-  
+
   for (const pos of positions) {
     const posKey = `${pos.x},${pos.y},${pos.z}`;
     if (occupied.has(posKey)) {
@@ -53,7 +53,7 @@ export function countCollisions(positions: Position[]): number {
       occupied.add(posKey);
     }
   }
-  
+
   return collisionCount;
 }
 
@@ -79,7 +79,7 @@ export function countCollisions(positions: Position[]): number {
  */
 export function calculateContactEnergy(sequence: string, positions: Position[]): number {
   let energy = 0;
-  
+
   // Parcurgem toate perechile de aminoacizi
   for (let i = 0; i < sequence.length; i++) {
     if (sequence[i] === "H") {
@@ -93,7 +93,7 @@ export function calculateContactEnergy(sequence: string, positions: Position[]):
           const dx = Math.abs(positions[i].x - positions[j].x);
           const dy = Math.abs(positions[i].y - positions[j].y);
           const dz = Math.abs(positions[i].z - positions[j].z);
-          
+
           // Dacă distanța Manhattan = 1, sunt vecini pe grilă = CONTACT H-H!
           if (dx + dy + dz === 1) {
             energy -= 1; // Fiecare contact H-H scade energia cu 1
@@ -102,7 +102,7 @@ export function calculateContactEnergy(sequence: string, positions: Position[]):
       }
     }
   }
-  
+
   return energy;
 }
 
@@ -135,16 +135,20 @@ export function calculateHHContacts(sequence: string, positions: Position[]): nu
  * Calculează energia pentru algoritmul genetic
  * Această metodă este separată de EnergyCalculator pentru a permite ajustări specifice
  * 
+ * IMPORTANT: GA nu rezolvă energia analitic - efectuează căutare stocastică într-un
+ * fitness landscape. Implementarea noastră definește acest landscape.
+ * 
  * FORMULA TOTALĂ: E_total = E_HP + (coliziuni × PENALTY_WEIGHT)
  * 
  * Unde:
  * - E_HP = -(număr contacte H-H non-consecutive) [energie negativă = bună]
  * - Coliziuni = număr de poziții ocupate de mai multe ori (auto-intersecții)
- * - PENALTY_WEIGHT = 100 (trebuie să fie mai mare decât câștigul maxim posibil per atom)
+ * - PENALTY_WEIGHT = 15 (softened from 100) - permite GA să exploreze tradeoffs
+ *   între coliziuni și energie HP, în loc să trateze coliziunile ca catastrofale
  * 
- * FITNESS: Energia mai mică = fitness mai bun
- * - Energia negativă = multe contacte H-H = conformație bună
- * - Energia pozitivă mare = multe coliziuni = conformație invalidă
+ * NOTĂ: Fitness-ul lexicographic este implementat în genetic-algorithm.ts:
+ * - Primul criteriu: minimizăm coliziunile (0 = valid)
+ * - Al doilea criteriu: minimizăm energia HP
  * 
  * @param sequence - Secvența de aminoacizi
  * @param directions - Direcțiile de pliere (R, L, U, D pentru 2D)
@@ -153,21 +157,21 @@ export function calculateHHContacts(sequence: string, positions: Position[]): nu
 export function calculateEnergy(sequence: string, directions: Direction[]): number {
   // 1. Calculează pozițiile
   const positions = calculatePositions(sequence, directions);
-  
+
   // 2. Numără coliziunile (auto-intersecțiile)
   const collisions = countCollisions(positions);
-  
+
   // 3. Calculează energia HP (contacte H-H non-consecutive)
   // Notă: Calculăm aceasta chiar dacă există coliziuni pentru a permite GA-ului
   // să găsească contacte H-H chiar și în timp ce "desface nodul"
   const hpEnergy = calculateContactEnergy(sequence, positions);
-  
+
   // 4. Combină energia HP cu penalizarea pentru coliziuni
-  // PENALTY_WEIGHT trebuie să fie mai mare decât câștigul maxim posibil per atom
-  // 100 este de obicei sigur (asigură că coliziunile sunt întotdeauna penalizate)
-  const PENALTY_WEIGHT = 100;
+  // PENALTY_WEIGHT = 15 (softened from 100) allows GA to explore tradeoffs
+  // between collisions and HP energy, rather than treating collisions as catastrophic
+  const PENALTY_WEIGHT = 15;
   const totalEnergy = hpEnergy + (collisions * PENALTY_WEIGHT);
-  
+
   return totalEnergy;
 }
 
