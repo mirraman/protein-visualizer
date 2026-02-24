@@ -10,7 +10,7 @@ import mongoose from "mongoose";
  * Tipul Individual - Reprezintă un cromozom în algoritm
  * Conține direcțiile (genele), energia HP pură și numărul de coliziuni.
  *
- * FIX: Separăm energia HP pură (hpEnergy) de energia totală cu penalizări (energy).
+ * Separăm energia HP pură (hpEnergy) de energia totală cu penalizări (energy).
  * - hpEnergy: contactele H-H reale (negative, ex: -8 pentru 8 contacte)
  * - energy:   hpEnergy + collision penalty (folosit intern pentru selecție)
  * - collisions: numărul de auto-intersecții
@@ -25,7 +25,7 @@ type Individual = {
 /**
  * Clasa GeneticAlgorithmSolver - Implementează Algoritmul Genetic
  *
- * SCHIMBĂRI FAȚĂ DE VERSIUNEA ANTERIOARĂ:
+ *
  * 1. SELECȚIE: Tournament → Rank-Based Selection (Linear Ranking)
  *    - Sortăm populația după fitness și atribuim ranguri
  *    - Probabilitatea de selecție este proporțională cu rangul, nu cu fitness-ul absolut
@@ -38,7 +38,7 @@ type Individual = {
  * 3. FITNESS: Separat hpEnergy (raportare) de energy (selecție)
  *    - Elimină dubla penalizare a coliziunilor
  *
- * 4. REPAIR: Îmbunătățit cu SAW local de la punctul de coliziune
+ * 4. Îmbunătățit cu SAW local de la punctul de coliziune
  */
 export class GeneticAlgorithmSolver extends BaseSolver {
   private populationSize: number;
@@ -86,7 +86,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     this.population = this.initializePopulation();
 
     let best = this.getBestIndividual();
-    // FIX: Raportăm hpEnergy pură, nu energia cu penalizări
+    // Raportăm hpEnergy pură, nu energia cu penalizări
     energyHistory.push({ iteration: 0, energy: best.hpEnergy });
 
     if (this.saveGenerations && this.userId && this.dbConnected) {
@@ -108,11 +108,11 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       const rankedPopulation = this.computeRanks();
 
       while (nextPopulation.length < this.populationSize) {
-        // FIX: Folosim rank-based selection în loc de tournament selection
+        // Folosim rank-based selection în loc de tournament selection
         const parentA = this.rankSelect(rankedPopulation);
         const parentB = this.rankSelect(rankedPopulation);
 
-        // FIX: Two-point crossover în loc de one-point
+        // Two-point crossover în loc de one-point
         let [childDirsA, childDirsB] = this.maybeCrossoverTwoPoint(parentA.directions, parentB.directions);
 
         // MUTAȚIE
@@ -141,7 +141,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       }
 
       if (iteration % logInterval === 0) {
-        // FIX: Raportăm hpEnergy pură în istoric
+        // Raportăm hpEnergy pură în istoric
         energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
@@ -165,7 +165,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       sequence: this.sequence,
       directions: best.directions,
       positions: GAEnergyCalculator.calculatePositions(this.sequence, best.directions),
-      energy: best.hpEnergy  // FIX: Returnăm energia HP pură ca rezultat final
+      energy: best.hpEnergy  // Returnăm energia HP pură ca rezultat final
     };
 
     this.population = [];
@@ -182,7 +182,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    * Evaluează un individ și returnează un obiect Individual complet.
    * Centralizat pentru a evita duplicarea logicii de calcul.
    *
-   * FIX: Separă hpEnergy (pură, pentru raportare) de energy (cu penalizări, pentru selecție)
+   *  Separă hpEnergy (pură, pentru raportare) de energy (cu penalizări, pentru selecție)
    */
   private evaluateIndividual(directions: Direction[]): Individual {
     const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
@@ -380,9 +380,8 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   }
 
   /**
-   * REPAIR ÎMBUNĂTĂȚIT - Repară cromozomii invalizi după mutație/crossover
+   * Repară cromozomii invalizi după mutație/crossover
    *
-   * FIX față de versiunea anterioară:
    * Versiunea veche resampela random de la punctul de coliziune, distrugând
    * materialul genetic al părinților. Noua versiune încearcă mai întâi să
    * găsească o direcție alternativă DOAR la poziția de coliziune (modificare minimă),
