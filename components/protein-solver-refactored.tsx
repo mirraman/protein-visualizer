@@ -92,6 +92,7 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
   const [mutationRate, setMutationRate] = useState([0.1]);
   const [eliteCount, setEliteCount] = useState([3]);
   const [tournamentSize, setTournamentSize] = useState([3]);
+  const [selectionPressure, setSelectionPressure] = useState([1.5]);
 
   // ES parameters
   const [mu, setMu] = useState([25]);
@@ -187,10 +188,13 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
             ? eliteCount[0]
             : undefined,
         tournamentSize:
-          algorithmType === "ga" ||
           algorithmType === "ep" ||
           algorithmType === "gp"
             ? tournamentSize[0]
+            : undefined,
+        selectionPressure:
+          algorithmType === "ga"
+            ? selectionPressure[0]
             : undefined,
         // ES parameters
         mu: algorithmType === "es" ? mu[0] : undefined,
@@ -415,7 +419,7 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                       value={populationSize}
                       onValueChange={setPopulationSize}
                       min={20}
-                      max={200}
+                      max={1000}
                       step={10}
                       disabled={isRunning}
                     />
@@ -461,14 +465,14 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">
-                      Tournament Size: {tournamentSize[0]}
+                      Selection Pressure: {selectionPressure[0].toFixed(1)}
                     </Label>
                     <Slider
-                      value={tournamentSize}
-                      onValueChange={setTournamentSize}
-                      min={2}
-                      max={10}
-                      step={1}
+                      value={selectionPressure}
+                      onValueChange={setSelectionPressure}
+                      min={1.0}
+                      max={2.0}
+                      step={0.1}
                       disabled={isRunning}
                     />
                   </div>

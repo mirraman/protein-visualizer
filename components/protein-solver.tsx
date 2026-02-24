@@ -93,6 +93,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
   const [mutationRate, setMutationRate] = useState([0.1]);
   const [eliteCount, setEliteCount] = useState([3]);
   const [tournamentSize, setTournamentSize] = useState([3]);
+  const [selectionPressure, setSelectionPressure] = useState([1.5]);
 
   // ES parameters
   const [mu, setMu] = useState([25]);
@@ -178,7 +179,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
           crossoverRate: crossoverRate[0],
           mutationRate: mutationRate[0],
           eliteCount: eliteCount[0],
-          tournamentSize: tournamentSize[0],
+          selectionPressure: selectionPressure[0],
           initialDirections,
           latticeType,
           onProgress: (progressData) => {
@@ -410,7 +411,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                       value={populationSize}
                       onValueChange={setPopulationSize}
                       min={20}
-                      max={200}
+                      max={1000}
                       step={10}
                       disabled={isRunning}
                     />
@@ -456,14 +457,14 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm">
-                      Tournament Size: {tournamentSize[0]}
+                      Selection Pressure: {selectionPressure[0].toFixed(1)}
                     </Label>
                     <Slider
-                      value={tournamentSize}
-                      onValueChange={setTournamentSize}
-                      min={2}
-                      max={10}
-                      step={1}
+                      value={selectionPressure}
+                      onValueChange={setSelectionPressure}
+                      min={1.0}
+                      max={2.0}
+                      step={0.1}
                       disabled={isRunning}
                     />
                   </div>

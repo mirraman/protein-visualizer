@@ -3,8 +3,8 @@
  * Decouples solver logic from React components
  */
 
-import { 
-  MonteCarloSolver, 
+import {
+  MonteCarloSolver,
   SimulatedAnnealingSolver,
   GeneticAlgorithmSolver,
   EvolutionStrategiesSolver,
@@ -28,7 +28,8 @@ export interface SolverConfig {
   crossoverRate?: number;
   mutationRate?: number;
   eliteCount?: number;
-  tournamentSize?: number;
+  tournamentSize?: number; // Kept for EP and GP
+  selectionPressure?: number; // For GA
   // GA population saving
   saveGenerations?: boolean; // Save all chromosomes to DB
   userId?: string; // User ID for saving generations
@@ -92,7 +93,7 @@ export class ProteinSolverService {
           crossoverRate: config.crossoverRate ?? 0.9,
           mutationRate: config.mutationRate ?? 0.1,
           eliteCount: config.eliteCount ?? 3,
-          tournamentSize: config.tournamentSize ?? 3,
+          selectionPressure: config.selectionPressure ?? 1.5,
           initialDirections: config.initialDirections,
           latticeType: config.latticeType,
           saveGenerations: config.saveGenerations ?? false,
@@ -156,7 +157,7 @@ export class ProteinSolverService {
       }
 
       const result = await this.currentSolver.solve();
-      
+
       this.callbacks.onComplete?.(result);
       return result;
 
@@ -199,20 +200,20 @@ export class ProteinSolverService {
    */
   static validateSequence(sequence: string): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (!sequence || sequence.length === 0) {
       errors.push('Sequence cannot be empty');
     }
-    
+
     if (sequence.length < 2) {
       errors.push('Sequence must have at least 2 residues');
     }
-    
+
     const invalidChars = sequence.replace(/[HP]/g, '');
     if (invalidChars.length > 0) {
       errors.push(`Invalid characters found: ${[...new Set(invalidChars)].join(', ')}`);
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
@@ -224,24 +225,24 @@ export class ProteinSolverService {
    */
   static validateDirections(directions: Direction[], sequenceLength: number, latticeType: '2D' | '3D' = '2D'): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (!directions || directions.length === 0) {
       return { isValid: true, errors: [] }; // Directions are optional
     }
-    
+
     if (directions.length !== sequenceLength - 1) {
       errors.push(`Expected ${sequenceLength - 1} directions for sequence of length ${sequenceLength}, got ${directions.length}`);
     }
-    
+
     // Include F/B for 3D lattice
-    const validDirections = latticeType === '3D' 
-      ? ['R', 'U', 'D', 'L', 'F', 'B'] 
+    const validDirections = latticeType === '3D'
+      ? ['R', 'U', 'D', 'L', 'F', 'B']
       : ['R', 'U', 'D', 'L'];
     const invalidDirections = directions.filter(d => !validDirections.includes(d));
     if (invalidDirections.length > 0) {
       errors.push(`Invalid directions found: ${[...new Set(invalidDirections)].join(', ')}`);
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
@@ -253,7 +254,7 @@ export class ProteinSolverService {
    */
   static async batchSolve(configs: SolverConfig[]): Promise<SolverResult[]> {
     const results: SolverResult[] = [];
-    
+
     for (const config of configs) {
       const service = new ProteinSolverService();
       try {
@@ -264,7 +265,7 @@ export class ProteinSolverService {
         // Continue with next config
       }
     }
-    
+
     return results;
   }
 
@@ -274,10 +275,10 @@ export class ProteinSolverService {
       iteration: progress.iteration || 0,
       currentEnergy: progress.currentEnergy || 0,
       bestEnergy: progress.bestEnergy || 0,
-      progress: progress.iteration && this.currentSolver ? 
+      progress: progress.iteration && this.currentSolver ?
         (progress.iteration / (this.currentSolver as any).maxIterations) * 100 : 0
     };
-    
+
     this.callbacks.onProgress?.(solverProgress);
   }
 }

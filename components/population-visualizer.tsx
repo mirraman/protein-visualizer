@@ -177,7 +177,7 @@ export const PopulationVisualizer: React.FC<PopulationVisualizerProps> = ({
       )}
 
       {/* Grid View */}
-      {viewMode === "grid" ? (
+      {viewMode === "grid" && (
         <Card>
           <CardContent className="pt-6">
             <div className="grid grid-cols-5 gap-2">

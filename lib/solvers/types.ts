@@ -43,7 +43,7 @@ export interface GeneticAlgorithmParameters extends SolverParameters {
   crossoverRate: number; // 0..1
   mutationRate: number; // 0..1 per gene
   eliteCount: number; // number of elites to keep each generation
-  tournamentSize: number; // for selection
+  selectionPressure?: number; // for selection
   saveGenerations?: boolean; // Save all chromosomes to DB
   userId?: string; // User ID for saving generations
   experimentName?: string; // Optional experiment name
@@ -111,15 +111,15 @@ export abstract class BaseSolver {
    */
   protected generateRandomDirections(): Direction[] {
     const maxRestarts = 100; // Prevent infinite loops
-    
+
     for (let attempt = 0; attempt < maxRestarts; attempt++) {
       const directions: Direction[] = [];
       const occupied = new Set<string>();
       let currentPos = { x: 0, y: 0, z: 0 };
-      
+
       // Mark origin as occupied
       occupied.add(`${currentPos.x},${currentPos.y},${currentPos.z}`);
-      
+
       let validWalk = true;
 
       // Try to build the full sequence
@@ -138,7 +138,7 @@ export abstract class BaseSolver {
             occupied.add(posKey);
             currentPos = nextPos;
             moveFound = true;
-            break; 
+            break;
           }
         }
 
@@ -153,7 +153,7 @@ export abstract class BaseSolver {
       if (validWalk) {
         return directions;
       }
-      
+
       // If we are here, 'validWalk' was false, so the loop repeats (restart)
     }
 

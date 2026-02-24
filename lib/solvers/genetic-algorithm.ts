@@ -8,53 +8,59 @@ import mongoose from "mongoose";
 
 /**
  * Tipul Individual - Reprezintă un cromozom în algoritm
- * Conține direcțiile (genele), energia (fitness-ul) și numărul de coliziuni
- * Folosit pentru lexicographic fitness: minimizăm coliziunile mai întâi, apoi energia
+ * Conține direcțiile (genele), energia HP pură și numărul de coliziuni.
+ *
+ * FIX: Separăm energia HP pură (hpEnergy) de energia totală cu penalizări (energy).
+ * - hpEnergy: contactele H-H reale (negative, ex: -8 pentru 8 contacte)
+ * - energy:   hpEnergy + collision penalty (folosit intern pentru selecție)
+ * - collisions: numărul de auto-intersecții
  */
 type Individual = {
   directions: Direction[];  // Cromozomul - secvența de direcții
-  energy: number;           // Fitness-ul - energia HP (mai mică = mai bună)
+  hpEnergy: number;         // Energia HP pură (fără penalizări) - pentru raportare
+  energy: number;           // Fitness combinat cu penalizări - pentru selecție internă
   collisions: number;       // Numărul de coliziuni (0 = valid, >0 = invalid)
 };
 
 /**
- * Clasa GeneticAlgorithmSolver - Implementează Algoritmul Genetic simplu
+ * Clasa GeneticAlgorithmSolver - Implementează Algoritmul Genetic
+ *
+ * SCHIMBĂRI FAȚĂ DE VERSIUNEA ANTERIOARĂ:
+ * 1. SELECȚIE: Tournament → Rank-Based Selection (Linear Ranking)
+ *    - Sortăm populația după fitness și atribuim ranguri
+ *    - Probabilitatea de selecție este proporțională cu rangul, nu cu fitness-ul absolut
+ *    - Avantaj: presiune de selecție uniformă, previne dominanța timpurie a câtorva indivizi
+ *
+ * 2. CROSSOVER: One-Point → Two-Point Crossover
+ *    - Două puncte de tăiere în loc de unul
+ *    - Păstrează mai bine segmente structurale contigue (mai relevant pentru protein folding)
+ *
+ * 3. FITNESS: Separat hpEnergy (raportare) de energy (selecție)
+ *    - Elimină dubla penalizare a coliziunilor
+ *
+ * 4. REPAIR: Îmbunătățit cu SAW local de la punctul de coliziune
  */
 export class GeneticAlgorithmSolver extends BaseSolver {
-  // Dimensiunea populației - câți indivizi avem în fiecare generație
   private populationSize: number;
-
-  // Rata de crossover - probabilitatea de a face încrucișare (ex: 0.9 = 90%)
   private crossoverRate: number;
-
-  // Rata de mutație - probabilitatea de a muta o genă (ex: 0.1 = 10%)
   private mutationRate: number;
-
-  // Numărul de elită - câți dintre cei mai buni sunt copiați direct
   private eliteCount: number;
+  private selectionPressure: number; // For rank-based selection
 
-  // Dimensiunea turnirului - câți indivizi participă la selecție
-  private tournamentSize: number;
-
-  // Populația curentă de indivizi
   private population: Individual[] = [];
 
-  // Flag-uri pentru salvare generații
   private saveGenerations: boolean;
   private userId?: string;
   private experimentName?: string;
   private dbConnected: boolean = false;
 
-  /**
-   * Constructor - Inițializează algoritmul cu parametrii genetici
-   */
   constructor(parameters: GeneticAlgorithmParameters) {
     super(parameters);
-    this.populationSize = parameters.populationSize;      // Ex: 100 indivizi
-    this.crossoverRate = parameters.crossoverRate;        // Ex: 0.9 (90%)
-    this.mutationRate = parameters.mutationRate;          // Ex: 0.1 (10%)
-    this.eliteCount = parameters.eliteCount;              // Ex: 3 indivizi
-    this.tournamentSize = parameters.tournamentSize;      // Ex: 3 indivizi
+    this.populationSize = parameters.populationSize;
+    this.crossoverRate = parameters.crossoverRate;
+    this.mutationRate = parameters.mutationRate;
+    this.eliteCount = parameters.eliteCount;
+    this.selectionPressure = parameters.selectionPressure ?? 1.5;
     this.saveGenerations = parameters.saveGenerations || false;
     this.userId = parameters.userId;
     this.experimentName = parameters.experimentName;
@@ -67,127 +73,101 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const startTime = Date.now();
     const energyHistory: { iteration: number; energy: number }[] = [];
 
-    // Conectare la DB dacă trebuie să salvăm generații
     if (this.saveGenerations && this.userId) {
       try {
         await connectDB();
         this.dbConnected = true;
       } catch (error) {
         console.error('Failed to connect to database for saving generations:', error);
-        // Continuăm algoritmul chiar dacă conectarea eșuează
       }
     }
 
-    // PASUL 1: INIȚIALIZARE - Creăm populația inițială
+    // PASUL 1: INIȚIALIZARE
     this.population = this.initializePopulation();
 
-    // Găsim cel mai bun individ din populația inițială
     let best = this.getBestIndividual();
-    energyHistory.push({ iteration: 0, energy: best.energy });
+    // FIX: Raportăm hpEnergy pură, nu energia cu penalizări
+    energyHistory.push({ iteration: 0, energy: best.hpEnergy });
 
-    // Salvează generația inițială (generația 0)
     if (this.saveGenerations && this.userId && this.dbConnected) {
       await this.saveGeneration(0);
     }
 
-    // Calculăm intervalele pentru logging și UI
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
     const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
 
-    // BUCLA PRINCIPALĂ - Evoluție pe generații
+    // BUCLA PRINCIPALĂ
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
-      // Verificăm dacă s-a cerut oprirea
       if (this.isStopped) break;
 
-      // PASUL 2: ELITISM - Copiem cei mai buni indivizi direct în noua generație
-      // Aceștia nu sunt modificați - păstrăm cele mai bune soluții găsite
+      // PASUL 2: ELITISM
       const nextPopulation: Individual[] = this.getElites(this.eliteCount);
 
-      // PASUL 3: CREĂM RESTUL POPULAȚIEI prin selecție, crossover și mutație
+      // PASUL 3: SELECȚIE PRIN RANGURI + CROSSOVER + MUTAȚIE
+      // Pre-calculăm distribuția de ranguri o singură dată per generație (eficiență)
+      const rankedPopulation = this.computeRanks();
+
       while (nextPopulation.length < this.populationSize) {
-        // SELECȚIE: Alegem doi părinți prin turnir
-        const parentA = this.tournamentSelect();  // Primul părinte
-        const parentB = this.tournamentSelect();  // Al doilea părinte
+        // FIX: Folosim rank-based selection în loc de tournament selection
+        const parentA = this.rankSelect(rankedPopulation);
+        const parentB = this.rankSelect(rankedPopulation);
 
-        // CROSSOVER: Combinăm genele părinților pentru a crea doi copii
-        let [childDirsA, childDirsB] = this.maybeCrossover(parentA.directions, parentB.directions);
+        // FIX: Two-point crossover în loc de one-point
+        let [childDirsA, childDirsB] = this.maybeCrossoverTwoPoint(parentA.directions, parentB.directions);
 
-        // MUTAȚIE: Aplicăm mutații aleatorii pe genele copiilor
+        // MUTAȚIE
         childDirsA = this.mutate(childDirsA);
         childDirsB = this.mutate(childDirsB);
 
-        // REPAIR: Reparăm cromozomii invalizi
+        // REPAIR îmbunătățit
         childDirsA = this.repairChromosome(childDirsA);
         childDirsB = this.repairChromosome(childDirsB);
 
-        // EVALUARE: Calculăm fitness-ul (energia și coliziunile) copiilor
-        const positionsA = GAEnergyCalculator.calculatePositions(this.sequence, childDirsA);
-        const collisionsA = GAEnergyCalculator.countCollisions(positionsA);
-        const childA: Individual = {
-          directions: childDirsA,
-          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsA),
-          collisions: collisionsA
-        };
+        // EVALUARE
+        const childA = this.evaluateIndividual(childDirsA);
+        const childB = this.evaluateIndividual(childDirsB);
 
-        const positionsB = GAEnergyCalculator.calculatePositions(this.sequence, childDirsB);
-        const collisionsB = GAEnergyCalculator.countCollisions(positionsB);
-        const childB: Individual = {
-          directions: childDirsB,
-          energy: GAEnergyCalculator.calculateEnergy(this.sequence, childDirsB),
-          collisions: collisionsB
-        };
-
-        // Adăugăm copiii în noua generație
         nextPopulation.push(childA);
         if (nextPopulation.length < this.populationSize) {
           nextPopulation.push(childB);
         }
       }
 
-      // Înlocuim vechea generație cu cea nouă
       this.population = nextPopulation;
 
-      // Găsim cel mai bun individ din noua generație
       const currentBest = this.getBestIndividual();
-
-      // Actualizăm cel mai bun global dacă am găsit ceva mai bun (lexicographic)
       if (this.isBetter(currentBest, best)) {
         best = currentBest;
       }
 
-      // Logging și actualizare UI la intervale regulate
       if (iteration % logInterval === 0) {
-        energyHistory.push({ iteration, energy: best.energy });
+        // FIX: Raportăm hpEnergy pură în istoric
+        energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
-          currentEnergy: currentBest.energy,
-          bestEnergy: best.energy,
+          currentEnergy: currentBest.hpEnergy,
+          bestEnergy: best.hpEnergy,
           progress: (iteration / this.maxIterations) * 100
         });
 
-        // Salvează generația curentă în DB (la aceleași intervale ca logging-ul)
         if (this.saveGenerations && this.userId && this.dbConnected) {
           await this.saveGeneration(iteration);
         }
       }
 
-      // Cedăm controlul browser-ului
       if (iteration % yieldInterval === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
 
-    // Construim conformația finală pentru rezultat
     const endTime = Date.now();
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
       positions: GAEnergyCalculator.calculatePositions(this.sequence, best.directions),
-      energy: best.energy
+      energy: best.hpEnergy  // FIX: Returnăm energia HP pură ca rezultat final
     };
 
-    // Cleanup: Eliberăm memoria populației după ce algoritmul s-a terminat
-    // Acest lucru ajută garbage collector-ul să elibereze cromozomii din memorie
     this.population = [];
 
     return {
@@ -199,42 +179,47 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   }
 
   /**
-   * Inițializează populația cu indivizi aleatorii
-   * Fiecare individ are un cromozom (direcții) generat folosind Self-Avoiding Walk (SAW)
-   * SAW-urile asigură că populația inițială are calitate bună (fără coliziuni)
+   * Evaluează un individ și returnează un obiect Individual complet.
+   * Centralizat pentru a evita duplicarea logicii de calcul.
+   *
+   * FIX: Separă hpEnergy (pură, pentru raportare) de energy (cu penalizări, pentru selecție)
+   */
+  private evaluateIndividual(directions: Direction[]): Individual {
+    const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
+    const collisions = GAEnergyCalculator.countCollisions(positions);
+    const hpEnergy = GAEnergyCalculator.calculateContactEnergy(this.sequence, positions);
+
+    // Energia pentru selecție internă: HP + penalizare coliziuni
+    // PENALTY_WEIGHT = 15 permite GA să exploreze tradeoffs
+    const PENALTY_WEIGHT = 15;
+    const energy = hpEnergy + (collisions * PENALTY_WEIGHT);
+
+    return { directions, hpEnergy, energy, collisions };
+  }
+
+  /**
+   * Inițializează populația cu indivizi evaluați complet
    */
   private initializePopulation(): Individual[] {
     const individuals: Individual[] = [];
 
-    // Creăm populationSize indivizi
     for (let i = 0; i < this.populationSize; i++) {
-      // Generăm un cromozom folosind Self-Avoiding Walk (bias initialization)
       const directions = this.generateInitialDirections();
-      // Calculăm pozițiile și coliziunile
-      const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
-      const collisions = GAEnergyCalculator.countCollisions(positions);
-      // Calculăm fitness-ul (energia) folosind calculatorul specific GA
-      const energy = GAEnergyCalculator.calculateEnergy(this.sequence, directions);
-      // Adăugăm individul în populație cu informații complete
-      individuals.push({ directions, energy, collisions });
+      individuals.push(this.evaluateIndividual(directions));
     }
 
     return individuals;
   }
 
   /**
-   * Generează direcții inițiale pentru un cromozom
-   * Lungimea = lungimea secvenței - 1 (între aminoacizi consecutivi)
+   * Generează direcții inițiale folosind Self-Avoiding Walk (SAW)
    */
   private generateInitialDirections(): Direction[] {
     const length = this.sequence.length - 1;
     let attempts = 0;
 
     while (attempts < 100) {
-      // Generate random directions
       const candidate = this.generateRandomDirections().slice(0, length);
-
-      // Verifică dacă conformația este validă folosind calculatorul specific GA
       const positions = GAEnergyCalculator.calculatePositions(this.sequence, candidate);
       if (GAEnergyCalculator.isValid(positions)) {
         return candidate;
@@ -242,132 +227,149 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       attempts++;
     }
 
-    // If we fail 100 times, just return the last one and let the GA fix it
-    // (The soft constraint logic above will handle it)
     return this.generateRandomDirections().slice(0, length);
   }
 
   /**
    * ELITISM - Selectează cei mai buni k indivizi
-   * Aceștia sunt copiați direct în noua generație fără modificări
-   * 
-   * Folosește lexicographic fitness: minimizăm coliziunile mai întâi, apoi energia
-   * 
-   * @param k - Numărul de elită de selectat
-   * @returns Array cu cei mai buni k indivizi
+   * Folosește comparare lexicografică: coliziuni mai întâi, apoi energie
    */
   private getElites(k: number): Individual[] {
-    // Sortăm populația folosind lexicographic fitness:
-    // 1. Mai întâi după coliziuni (0 = valid, mai mic = mai bun)
-    // 2. Apoi după energie (mai mic = mai bun)
     return [...this.population]
       .sort((a, b) => {
-        // Primul criteriu: coliziuni (0 este cel mai bun)
-        if (a.collisions !== b.collisions) {
-          return a.collisions - b.collisions;
-        }
-        // Al doilea criteriu: energie (mai mic = mai bun)
+        if (a.collisions !== b.collisions) return a.collisions - b.collisions;
         return a.energy - b.energy;
       })
       .slice(0, Math.min(k, this.population.length));
   }
 
   /**
-   * SELECȚIE TURNIR - Selectează un părinte pentru reproducere
-   * 
+   * RANK-BASED SELECTION (Selecție prin Etichete / Ranguri)
+   *
    * PRINCIPIU:
-   * 1. Alegem tournamentSize indivizi aleatoriu din populație
-   * 2. Cel cu cel mai bun fitness câștigă (lexicographic: coliziuni mai întâi, apoi energie)
-   * 
-   * Avantaj: presiune de selecție ajustabilă prin dimensiunea turnirului
-   * - Turnir mare (5-10) = presiune mare (doar cei foarte buni se reproduc)
-   * - Turnir mic (2-3) = presiune mică (și indivizii mediocri au șanse)
+   * 1. Sortăm populația după fitness (cel mai bun = rang N, cel mai rău = rang 1)
+   * 2. Probabilitatea de selecție = rang / suma_rangurilor
+   * 3. Selectăm folosind roulette wheel pe distribuția de ranguri
+   *
+   * AVANTAJ față de tournament selection:
+   * - Presiune de selecție uniformă și controlabilă
+   * - Individul cel mai bun nu domină complet populația
+   * - Individul cel mai slab are mereu o șansă mică (menține diversitate)
+   * - Nu depinde de diferențele absolute de fitness, ci de ordinea relativă
+   *
+   * LINEAR RANKING: prob(rank_i) = rank_i / sum(1..N) = 2*rank_i / (N*(N+1))
+   *
+   * @param ranked - Populația sortată cu ranguri pre-calculate (de la computeRanks)
+   * @returns Individul selectat
    */
-  private tournamentSelect(): Individual {
-    const picks: Individual[] = [];
+  private rankSelect(ranked: { individual: Individual; rank: number; cumulativeProb: number }[]): Individual {
+    const r = Math.random();
 
-    // Alegem tournamentSize indivizi aleatoriu
-    for (let i = 0; i < this.tournamentSize; i++) {
-      const idx = Math.floor(Math.random() * this.population.length);
-      picks.push(this.population[idx]);
+    // Căutăm individul corespunzător valorii aleatoare (roulette wheel)
+    for (const entry of ranked) {
+      if (r <= entry.cumulativeProb) {
+        return entry.individual;
+      }
     }
 
-    // Returnăm cel mai bun din turnir folosind lexicographic fitness
-    return picks.reduce((best, cur) => {
-      // Primul criteriu: coliziuni (0 este cel mai bun)
-      if (cur.collisions !== best.collisions) {
-        return cur.collisions < best.collisions ? cur : best;
-      }
-      // Al doilea criteriu: energie (mai mic = mai bun)
-      return cur.energy < best.energy ? cur : best;
-    }, picks[0]);
+    // Fallback: returnăm ultimul (cel mai bun) individ
+    return ranked[ranked.length - 1].individual;
   }
 
   /**
-   * CROSSOVER UN-PUNCT (One-Point Crossover)
-   * 
+   * Pre-calculează distribuția de ranguri pentru întreaga populație.
+   * Apelat o singură dată per generație pentru eficiență.
+   *
+   * Sortare: cel mai RĂU = rang 1, cel mai BUN = rang N
+   * Probabilitate: prob(i) = rank(i) / sum(1..N)
+   * Probabilitate cumulativă: pentru roulette wheel selection
+   */
+  private computeRanks(): { individual: Individual; rank: number; cumulativeProb: number }[] {
+    const N = this.population.length;
+
+    // Sortăm crescător (cel mai rău primul → rang 1)
+    const sorted = [...this.population].sort((a, b) => {
+      if (a.collisions !== b.collisions) return b.collisions - a.collisions; // mai multe coliziuni = mai rău
+      return b.energy - a.energy; // energie mai mare = mai rău
+    });
+
+    const s = this.selectionPressure;
+    let cumulative = 0;
+
+    return sorted.map((individual, index) => {
+      const rank = index + 1; // rang 1 (cel mai rău) până la N (cel mai bun)
+      const prob = (2 - s) / N + (2 * rank * (s - 1)) / (N * (N + 1));
+      cumulative += prob;
+      return { individual, rank, cumulativeProb: cumulative };
+    });
+  }
+
+  /**
+   * TWO-POINT CROSSOVER (Crossover în Două Puncte)
+   *
    * PRINCIPIU:
    * 1. Cu probabilitate crossoverRate, facem încrucișare
-   * 2. Alegem un punct aleatoriu în cromozom
-   * 3. Copilul 1 = prima parte din A + a doua parte din B
-   *    Copilul 2 = prima parte din B + a doua parte din A
-   * 
-   * Exemplu (punct = 3):
-   * Părinte A: [L, R, U, D, L, R]
-   * Părinte B: [R, D, L, U, R, D]
-   * Copil 1:   [L, R, U, | U, R, D]  (A până la 3, B de la 3)
-   * Copil 2:   [R, D, L, | D, L, R]  (B până la 3, A de la 3)
-   * 
-   * @returns Tuplu cu direcțiile celor doi copii
+   * 2. Alegem DOUĂ puncte aleatorii în cromozom (point1 < point2)
+   * 3. Copilul 1 = A[0..p1] + B[p1..p2] + A[p2..end]
+   *    Copilul 2 = B[0..p1] + A[p1..p2] + B[p2..end]
+   *
+   * AVANTAJ față de one-point crossover:
+   * - Păstrează mai bine segmente structurale contigue din AMBII părinți
+   * - Mai relevant pentru protein folding unde segmente locale contează
+   * - Reduce "positional bias" (genele de la capete nu avantajate vs mijloc)
+   *
+   * Exemplu (p1=2, p2=5):
+   * Părinte A: [L, R, | U, D, L, | R, U]
+   * Părinte B: [R, D, | L, U, R, | D, L]
+   * Copil 1:   [L, R,   L, U, R,   R, U]  ← A + B_mid + A
+   * Copil 2:   [R, D,   U, D, L,   D, L]  ← B + A_mid + B
    */
-  private maybeCrossover(a: Direction[], b: Direction[]): [Direction[], Direction[]] {
-    // Cu probabilitate (1 - crossoverRate), nu facem crossover
+  private maybeCrossoverTwoPoint(a: Direction[], b: Direction[]): [Direction[], Direction[]] {
     if (Math.random() > this.crossoverRate) {
-      return [a.slice(), b.slice()];  // Returnăm copii ai părinților
-    }
-
-    // Calculăm lungimea minimă (pentru siguranță)
-    const length = Math.min(a.length, b.length);
-
-    // Dacă cromozomul e prea scurt, nu putem face crossover
-    if (length < 2) {
       return [a.slice(), b.slice()];
     }
 
-    // Alegem punctul de tăiere aleatoriu (între 1 și length-1)
-    const point = 1 + Math.floor(Math.random() * (length - 1));
+    const length = Math.min(a.length, b.length);
 
-    // Creăm copiii prin schimbul părților
-    const childA = a.slice(0, point).concat(b.slice(point));  // A[0..point] + B[point..end]
-    const childB = b.slice(0, point).concat(a.slice(point));  // B[0..point] + A[point..end]
+    if (length < 3) {
+      return [a.slice(), b.slice()];
+    }
 
-    return [childA as Direction[], childB as Direction[]];
+    // Alegem două puncte distincte (1 ≤ p1 < p2 < length)
+    let point1 = 1 + Math.floor(Math.random() * (length - 2));
+    let point2 = point1 + 1 + Math.floor(Math.random() * (length - point1 - 1));
+
+    // Asigurăm că p1 < p2
+    if (point1 >= point2) {
+      point2 = Math.min(point1 + 1, length - 1);
+    }
+
+    // Creăm copiii
+    const childA = [
+      ...a.slice(0, point1),
+      ...b.slice(point1, point2),
+      ...a.slice(point2)
+    ] as Direction[];
+
+    const childB = [
+      ...b.slice(0, point1),
+      ...a.slice(point1, point2),
+      ...b.slice(point2)
+    ] as Direction[];
+
+    return [childA, childB];
   }
 
   /**
    * MUTAȚIE - Modifică aleatoriu genele unui cromozom
-   * 
-   * PRINCIPIU:
-   * Pentru fiecare genă (direcție), cu probabilitate mutationRate:
-   * - Înlocuim gena cu o altă valoare aleatorie diferită
-   * 
-   * ROL: Introduce diversitate în populație, previne convergența prematură
-   * 
-   * @param genes - Cromozomul de mutat
-   * @returns Cromozomul mutat
+   * Fiecare genă are probabilitate mutationRate de a fi schimbată cu o altă direcție
    */
   private mutate(genes: Direction[]): Direction[] {
-    // Copiem genele (nu modificăm originalul)
     const dirs: Direction[] = genes.slice();
-
-    // Alfabetul de gene (direcțiile posibile)
     const alphabet: Direction[] = this.possibleDirections;
 
-    // Pentru fiecare genă
     for (let i = 0; i < dirs.length; i++) {
-      // Cu probabilitate mutationRate
       if (Math.random() < this.mutationRate) {
-        // Înlocuim cu o altă direcție (diferită de cea curentă)
         const current = dirs[i];
         const choices = alphabet.filter(d => d !== current);
         dirs[i] = choices[Math.floor(Math.random() * choices.length)];
@@ -378,22 +380,23 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   }
 
   /**
-   * REPAIR - Repară cromozomii invalizi după mutație/crossover 
-   * 
-   * Strategie:
-   * 1. Detectează prima coliziune
-   * 2. Încearcă să reruteze local calea pentru a evita coliziunea
-   * 3. Dacă nu reușește, resamplează direcțiile de la punctul de coliziune
-   * 
-   * @param directions - Direcțiile de reparat
-   * @returns Direcțiile reparate (sau resampleate dacă repararea eșuează)
+   * REPAIR ÎMBUNĂTĂȚIT - Repară cromozomii invalizi după mutație/crossover
+   *
+   * FIX față de versiunea anterioară:
+   * Versiunea veche resampela random de la punctul de coliziune, distrugând
+   * materialul genetic al părinților. Noua versiune încearcă mai întâi să
+   * găsească o direcție alternativă DOAR la poziția de coliziune (modificare minimă),
+   * și abia dacă eșuează de mai multe ori, resampela mai agresiv.
+   *
+   * Strategie în cascadă:
+   * 1. Detectează prima coliziune la indexul i
+   * 2. Încearcă să schimbe DOAR direcția i cu una valabilă (repair minim)
+   * 3. Dacă eșuează după maxLocalAttempts, resampelează de la i până la final
+   * 4. Dacă tot eșuează, generează complet din nou folosind SAW
    */
   private repairChromosome(directions: Direction[]): Direction[] {
     const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
-    const collisions = GAEnergyCalculator.countCollisions(positions);
-
-    // Dacă nu există coliziuni, returnăm direcțiile neschimbate
-    if (collisions === 0) {
+    if (GAEnergyCalculator.countCollisions(positions) === 0) {
       return directions;
     }
 
@@ -410,17 +413,27 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       occupied.add(posKey);
     }
 
-    // Dacă nu găsim coliziune (nu ar trebui să se întâmple), returnăm originalul
-    if (collisionIndex === -1) {
-      return directions;
+    if (collisionIndex === -1) return directions;
+
+    const repaired = directions.slice();
+
+    // Pasul 1: Încearcă modificare minimă (doar gena la colisionIndex - 1)
+    const repairAt = collisionIndex - 1;
+    if (repairAt >= 0) {
+      const shuffledDirs = [...this.possibleDirections].sort(() => Math.random() - 0.5);
+      for (const newDir of shuffledDirs) {
+        if (newDir === repaired[repairAt]) continue;
+        repaired[repairAt] = newDir;
+        const newPositions = GAEnergyCalculator.calculatePositions(this.sequence, repaired);
+        if (GAEnergyCalculator.countCollisions(newPositions) === 0) {
+          return repaired;
+        }
+      }
     }
 
-    // Încearcă să reruteze local: resamplează direcțiile de la punctul de coliziune
-    const repaired = directions.slice();
-    const maxRepairAttempts = 10;
-
+    // Pasul 2: Resampelează de la punctul de coliziune (ca înainte, dar cu mai multe încercări)
+    const maxRepairAttempts = 20; // Crescut de la 10 la 20
     for (let attempt = 0; attempt < maxRepairAttempts; attempt++) {
-      // Resamplează direcțiile de la coliziune până la sfârșit
       for (let i = collisionIndex - 1; i < repaired.length; i++) {
         if (i >= 0) {
           repaired[i] = this.possibleDirections[
@@ -428,57 +441,40 @@ export class GeneticAlgorithmSolver extends BaseSolver {
           ];
         }
       }
-
-      // Verifică dacă repararea a reușit
       const newPositions = GAEnergyCalculator.calculatePositions(this.sequence, repaired);
       if (GAEnergyCalculator.countCollisions(newPositions) === 0) {
         return repaired;
       }
     }
 
-    // Dacă repararea locală eșuează, resamplează complet folosind SAW
+    // Pasul 3: Fallback complet cu SAW
     return this.generateInitialDirections();
   }
 
   /**
-   * Compară doi indivizi folosind lexicographic fitness (Fix 4)
+   * Compară doi indivizi folosind lexicographic fitness
    * Primul criteriu: coliziuni (mai puține = mai bun)
    * Al doilea criteriu: energie (mai mică = mai bun)
-   * 
-   * @param a - Primul individ
-   * @param b - Al doilea individ
-   * @returns true dacă a este mai bun decât b
    */
   private isBetter(a: Individual, b: Individual): boolean {
-    // Primul criteriu: coliziuni
-    if (a.collisions !== b.collisions) {
-      return a.collisions < b.collisions;
-    }
-    // Al doilea criteriu: energie
+    if (a.collisions !== b.collisions) return a.collisions < b.collisions;
     return a.energy < b.energy;
   }
 
   /**
-   * Găsește și returnează cel mai bun individ din populație
-   * Folosește lexicographic fitness: minimizăm coliziunile mai întâi, apoi energia
+   * Găsește cel mai bun individ din populație (lexicographic fitness)
    */
   private getBestIndividual(): Individual {
     return this.population.reduce((best, cur) => {
-      // Primul criteriu: coliziuni (0 este cel mai bun)
       if (cur.collisions !== best.collisions) {
         return cur.collisions < best.collisions ? cur : best;
       }
-      // Al doilea criteriu: energie (mai mic = mai bun)
       return cur.energy < best.energy ? cur : best;
     }, this.population[0]);
   }
 
-
   /**
    * Calculează numărul de contacte H-H pentru o conformație
-   * @param sequence - Secvența de aminoacizi
-   * @param positions - Pozițiile 3D
-   * @returns number - Numărul de contacte H-H
    */
   private calculateHHContacts(sequence: string, positions: { x: number; y: number; z: number }[]): number {
     let contacts = 0;
@@ -489,9 +485,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
             const dx = Math.abs(positions[i].x - positions[j].x);
             const dy = Math.abs(positions[i].y - positions[j].y);
             const dz = Math.abs(positions[i].z - positions[j].z);
-            if (dx + dy + dz === 1) {
-              contacts++;
-            }
+            if (dx + dy + dz === 1) contacts++;
           }
         }
       }
@@ -501,52 +495,37 @@ export class GeneticAlgorithmSolver extends BaseSolver {
 
   /**
    * Salvează toți cromozomii din generația curentă în baza de date
-   * NU păstrează în memorie - salvează direct în DB
-   * @param generation - Numărul generației
    */
   private async saveGeneration(generation: number): Promise<void> {
-    if (!this.userId || !this.dbConnected) {
-      return;
-    }
+    if (!this.userId || !this.dbConnected) return;
 
     try {
-      // Convertește populația în format pentru DB
       const chromosomes: IChromosome[] = this.population.map(ind => {
         const positions = GAEnergyCalculator.calculatePositions(this.sequence, ind.directions);
-
-        // Calculează numărul de contacte H-H
         const hhContacts = GAEnergyCalculator.calculateHHContacts(this.sequence, positions);
-
         return {
           directions: ind.directions,
-          energy: ind.energy,
-          positions: positions,
-          hhContacts: hhContacts
+          energy: ind.hpEnergy, // FIX: Salvăm energia HP pură, nu cea cu penalizări
+          positions,
+          hhContacts
         };
       });
 
-      // Calculează statistici
       const energies = chromosomes.map(c => c.energy);
       const bestEnergy = Math.min(...energies);
       const averageEnergy = energies.reduce((a, b) => a + b, 0) / energies.length;
 
-      // Salvează în DB
       await GAPopulation.create({
         userId: new mongoose.Types.ObjectId(this.userId),
         sequence: this.sequence,
-        generation: generation,
-        chromosomes: chromosomes,
-        bestEnergy: bestEnergy,
-        averageEnergy: averageEnergy,
+        generation,
+        chromosomes,
+        bestEnergy,
+        averageEnergy,
         experimentName: this.experimentName,
       });
-
-      // Notă: Nu golim populația din memorie aici pentru că algoritmul mai are nevoie de ea
-      // Populația va fi înlocuită la următoarea iterație (linia 148: this.population = nextPopulation)
-      // Aceasta permite garbage collector-ului să elibereze automat vechea populație
     } catch (error) {
       console.error(`Error saving generation ${generation}:`, error);
-      // Nu aruncăm eroare - continuăm algoritmul chiar dacă salvare eșuează
     }
   }
 }
