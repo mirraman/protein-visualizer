@@ -8,7 +8,8 @@ import type { Direction } from "../types";
  */
 type Individual = {
   directions: Direction[];
-  energy: number;
+  hpEnergy: number;  // HP pură — pentru raportare
+  energy: number;    // Fitness (HP + penalty) — pentru selecție
   sigma: number;
 };
 
@@ -51,7 +52,7 @@ export class EvolutionStrategiesSolver extends BaseSolver {
     let bestEnergySoFar = best.energy;
     let stagnation = 0;
 
-    energyHistory.push({ iteration: 0, energy: best.energy });
+    energyHistory.push({ iteration: 0, energy: best.hpEnergy });
 
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
     const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
@@ -110,11 +111,11 @@ export class EvolutionStrategiesSolver extends BaseSolver {
       }
 
       if (iteration % logInterval === 0) {
-        energyHistory.push({ iteration, energy: best.energy });
+        energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
-          currentEnergy: currentBest.energy,
-          bestEnergy: best.energy,
+          currentEnergy: currentBest.hpEnergy,
+          bestEnergy: best.hpEnergy,
           progress: (iteration / this.maxIterations) * 100
         });
       }
@@ -129,7 +130,7 @@ export class EvolutionStrategiesSolver extends BaseSolver {
       sequence: this.sequence,
       directions: best.directions,
       positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
-      energy: best.energy
+      energy: best.hpEnergy
     };
 
     return {
@@ -145,8 +146,12 @@ export class EvolutionStrategiesSolver extends BaseSolver {
     const arr: Individual[] = [];
     for (let i = 0; i < n; i++) {
       const directions = this.generateRandomDirections();
-      const energy = EnergyCalculator.calculateEnergy(this.sequence, directions);
-      arr.push({ directions, energy, sigma: this.sigma });
+      arr.push({
+        directions,
+        hpEnergy: EnergyCalculator.calculateHPEnergy(this.sequence, directions),
+        energy:   EnergyCalculator.calculateFitness(this.sequence, directions, 100),
+        sigma:    this.sigma,
+      });
     }
     return arr;
   }
@@ -178,14 +183,14 @@ export class EvolutionStrategiesSolver extends BaseSolver {
       dirs = this.windowScramble(dirs, rate);
     }
 
-    const energy = EnergyCalculator.calculateEnergy(this.sequence, dirs);
+    const hpEnergy = EnergyCalculator.calculateHPEnergy(this.sequence, dirs);
+    const energy   = EnergyCalculator.calculateFitness(this.sequence, dirs, 100);
 
     // FIX 4: Individual sigma self-adaptation with wider range
-    // τ (learning rate) ~ 1/sqrt(n) where n = sequence length
     const tau = 1 / Math.sqrt(this.sequence.length);
     const childSigma = Math.min(0.6, Math.max(0.01, rate * Math.exp(tau * (Math.random() - 0.5))));
 
-    return { directions: dirs, energy, sigma: childSigma };
+    return { directions: dirs, hpEnergy, energy, sigma: childSigma };
   }
 
   /**

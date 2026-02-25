@@ -49,11 +49,8 @@ export class MonteCarloSolver extends BaseSolver {
     // Obținem cea mai bună conformație din populația inițială
     let bestConformation = this.getBestConformation();
 
-    // Calculăm energia medie a populației inițiale
-    let averageEnergy = this.getAverageEnergy();
-
-    // Salvăm energia inițială în istoric (iterația 0)
-    energyHistory.push({ iteration: 0, energy: averageEnergy });
+    // Salvăm energia inițială în istoric (iterația 0) — bestConformation.energy = hpEnergy
+    energyHistory.push({ iteration: 0, energy: bestConformation.energy });
 
     // Calculăm intervalele pentru logare și pentru a permite UI-ului să se actualizeze
     // logInterval: la câte iterații salvăm în istoric (max ~2000 intrări în istoric)
@@ -81,21 +78,17 @@ export class MonteCarloSolver extends BaseSolver {
 
       // PASUL 5: Înregistrăm statistici la intervale regulate
       if (iteration % logInterval === 0) {
-        // Calculăm energia medie actuală a populației
-        averageEnergy = this.getAverageEnergy();
-
-        // Adăugăm în istoricul energiilor
+        // FIX: log best hpEnergy found so far, not population average
         energyHistory.push({
           iteration,
-          energy: averageEnergy
+          energy: bestConformation.energy,  // this is hpEnergy after Step 3
         });
 
-        // Notificăm UI-ul despre progres (pentru bara de progres și grafic)
         this.onProgress?.({
-          iteration,                                              // Iterația curentă
-          currentEnergy: averageEnergy,                          // Energia medie actuală
-          bestEnergy: bestConformation.energy,                   // Cea mai bună energie găsită
-          progress: (iteration / this.maxIterations) * 100       // Procentul de completare
+          iteration,
+          currentEnergy: bestConformation.energy,
+          bestEnergy:    bestConformation.energy,
+          progress:      (iteration / this.maxIterations) * 100,
         });
       }
 
@@ -119,24 +112,21 @@ export class MonteCarloSolver extends BaseSolver {
 
   /**
    * Inițializează populația cu conformații aleatorii
-   * Creează populationSize conformații cu direcții generate aleatoriu
+   * Stochează hpEnergy în energy, fitness pentru selecție internă
    */
   private initializePopulation(): void {
-    // Resetăm populația
     this.population = [];
-    // Resetăm contorul de eșantioane
     this.totalSampledCount = 0;
 
-    // Generăm populationSize conformații aleatorii
     for (let i = 0; i < this.populationSize; i++) {
-      // Generăm un șir aleatoriu de direcții (L, R, U, D, F, B)
       const directions = this.generateRandomDirections();
-      // Creăm conformația calculând pozițiile și energia
-      const conformation = EnergyCalculator.createConformation(this.sequence, directions);
-      // Adăugăm conformația în populație
+      const conformation = {
+        ...EnergyCalculator.createConformation(this.sequence, directions),
+        energy:  EnergyCalculator.calculateHPEnergy(this.sequence, directions),
+        fitness: EnergyCalculator.calculateFitness(this.sequence, directions, 100),
+      };
       this.population.push(conformation);
     }
-    // Actualizăm contorul total de eșantioane
     this.totalSampledCount = this.populationSize;
   }
 
@@ -153,11 +143,12 @@ export class MonteCarloSolver extends BaseSolver {
     // === PARTEA 1: Generăm 50% conformații complet aleatorii ===
     const newSampleCount = Math.floor(this.populationSize * 0.5);
     for (let i = 0; i < newSampleCount; i++) {
-      // Generăm direcții aleatorii
       const directions = this.generateRandomDirections();
-      // Creăm conformația cu aceste direcții
-      const conformation = EnergyCalculator.createConformation(this.sequence, directions);
-      // Adăugăm în lista de noi eșantioane
+      const conformation = {
+        ...EnergyCalculator.createConformation(this.sequence, directions),
+        energy:  EnergyCalculator.calculateHPEnergy(this.sequence, directions),
+        fitness: EnergyCalculator.calculateFitness(this.sequence, directions, 100),
+      };
       newSamples.push(conformation);
     }
 
@@ -172,12 +163,14 @@ export class MonteCarloSolver extends BaseSolver {
 
     // Generăm conformații mutate din părinți aleși aleatoriu din top 50%
     for (let i = 0; i < mutationCount; i++) {
-      // Alegem un părinte aleatoriu din jumătatea superioară
       const parent = topHalf[Math.floor(Math.random() * topHalf.length)];
-      // Mutăm conformația părintelui
-      const mutatedConformation = this.mutateConformation(parent);
-      // Adăugăm mutantul în lista de noi eșantioane
-      newSamples.push(mutatedConformation);
+      const mutated = this.mutateConformation(parent);
+      const conformation = {
+        ...mutated,
+        energy:  EnergyCalculator.calculateHPEnergy(this.sequence, mutated.directions),
+        fitness: EnergyCalculator.calculateFitness(this.sequence, mutated.directions, 100),
+      };
+      newSamples.push(conformation);
     }
 
     // Adăugăm noile eșantioane în populație
@@ -225,13 +218,14 @@ export class MonteCarloSolver extends BaseSolver {
   /**
    * Menține diversitatea în populație
    * Păstrează 60% cele mai bune conformații + 40% aleatorii
-   * Aceasta previne convergența prematură și menține explorarea
+   * Sortare după fitness (nu energy) pentru selecție internă
    */
   private maintainPopulationDiversity(): void {
-    // Verificăm dacă populația a depășit dimensiunea țintă
     if (this.population.length > this.populationSize) {
-      // Sortăm populația după energie (crescător - cele mai bune primele)
-      const sorted = [...this.population].sort((a, b) => a.energy - b.energy);
+      const sorted = [...this.population].sort((a, b) =>
+        ((a as Conformation & { fitness?: number }).fitness ?? a.energy) -
+        ((b as Conformation & { fitness?: number }).fitness ?? b.energy)
+      );
 
       // Calculăm câte conformații păstrăm din fiecare categorie
       const keepBest = Math.floor(this.populationSize * 0.6);    // 60% cele mai bune
@@ -256,39 +250,16 @@ export class MonteCarloSolver extends BaseSolver {
 
   /**
    * Găsește și returnează cea mai bună conformație din populație
-   * Cea mai bună = energia cea mai mică (negativă)
-   * 
-   * @returns Conformation - Conformația cu energia minimă
+   * Compară după fitness (nu energy) — energy conține hpEnergy pentru raportare
    */
   private getBestConformation(): Conformation {
-    // Dacă populația e goală, returnăm o conformație vidă
     if (this.population.length === 0) {
       return { sequence: this.sequence, directions: [], energy: 0, positions: [] };
     }
-    // Găsim conformația cu energia minimă folosind reduce
-    return this.population.reduce((best, current) =>
-      current.energy < best.energy ? current : best
+    const withFitness = this.population as (Conformation & { fitness?: number })[];
+    return withFitness.reduce((best, current) =>
+      ((current.fitness ?? current.energy) < (best.fitness ?? best.energy) ? current : best)
     );
-  }
-
-  /**
-   * Calculează energia medie a populației
-   * Ignoră conformațiile invalide (cu energie infinită)
-   * 
-   * @returns number - Energia medie a conformațiilor valide
-   */
-  private getAverageEnergy(): number {
-    // Filtrăm conformațiile valide (energia finită)
-    const validConformations = this.population.filter(c => c.energy !== Number.POSITIVE_INFINITY);
-
-    // Dacă nu avem conformații valide, returnăm 0
-    if (validConformations.length === 0) return 0;
-
-    // Calculăm suma energiilor
-    const totalEnergy = validConformations.reduce((sum, c) => sum + c.energy, 0);
-
-    // Returnăm media
-    return totalEnergy / validConformations.length;
   }
 
   /**

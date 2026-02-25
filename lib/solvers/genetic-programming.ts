@@ -6,8 +6,9 @@ import type { Direction } from "../types";
  * Tipul Program - În GP tradițional ar fi un arbore, aici e o secvență
  */
 type Program = {
-  directions: Direction[];  // "Programul" - secvența de direcții
-  fitness?: number;         // Fitness-ul (energia) - opțional până la evaluare
+  directions: Direction[];
+  fitness?: number;   // Fitness (HP + penalty) — pentru selecție
+  hpEnergy?: number; // HP pură — pentru raportare
 };
 
 /**
@@ -147,9 +148,6 @@ export class GeneticProgrammingSolver extends BaseSolver {
   // Dimensiunea turnirului
   private tournamentSize: number;
 
-  // Numărul de evaluări per individ (pentru robustețe, opțional)
-  private rolloutCount: number;
-
   // Populația de programe
   private population: Program[] = [];
 
@@ -164,7 +162,6 @@ export class GeneticProgrammingSolver extends BaseSolver {
     this.mutationRate = parameters.mutationRate;          // Ex: 0.15
     this.eliteCount = parameters.eliteCount;              // Ex: 3
     this.tournamentSize = parameters.tournamentSize;      // Ex: 3
-    this.rolloutCount = parameters.rolloutCount ?? 1;     // Ex: 1
   }
 
   /**
@@ -224,8 +221,8 @@ export class GeneticProgrammingSolver extends BaseSolver {
       // Evaluăm noua generație și găsim cel mai bun
       const currentBest = this.evaluatePopulationAndGetBest();
 
-      // Actualizăm cel mai bun global
-      if (currentBest.energy < best.energy) {
+      // Actualizăm cel mai bun global (compară după fitness)
+      if (currentBest.fitness < best.fitness) {
         best = currentBest;
       }
 
@@ -278,27 +275,27 @@ export class GeneticProgrammingSolver extends BaseSolver {
 
   /**
    * Evaluează toată populația și returnează cel mai bun individ
-   * Calculează fitness-ul (energia) pentru fiecare program
+   * Fitness pentru selecție, hpEnergy pentru raportare
    */
-  private evaluatePopulationAndGetBest(): { directions: Direction[]; energy: number } {
-    let bestEnergy = Number.POSITIVE_INFINITY;
+  private evaluatePopulationAndGetBest(): { directions: Direction[]; energy: number; fitness: number } {
+    let bestFitness = Number.POSITIVE_INFINITY;
     let bestDirs: Direction[] = [];
+    let bestHpEnergy = 0;
 
-    // Evaluăm fiecare program
     for (const p of this.population) {
-      // Calculăm energia conformației
-      const energy = EnergyCalculator.calculateEnergy(this.sequence, p.directions);
-      // Salvăm fitness-ul în program
-      p.fitness = energy;
+      const hpEnergy = EnergyCalculator.calculateHPEnergy(this.sequence, p.directions);
+      const fitness  = EnergyCalculator.calculateFitness(this.sequence, p.directions, 100);
+      p.fitness = fitness;
+      p.hpEnergy = hpEnergy;
 
-      // Verificăm dacă e cel mai bun
-      if (energy < bestEnergy) {
-        bestEnergy = energy;
+      if (fitness < bestFitness) {
+        bestFitness = fitness;
         bestDirs = p.directions.slice();
+        bestHpEnergy = hpEnergy;
       }
     }
 
-    return { directions: bestDirs, energy: bestEnergy };
+    return { directions: bestDirs, energy: bestHpEnergy, fitness: bestFitness };
   }
 
   /**

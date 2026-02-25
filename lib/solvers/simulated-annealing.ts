@@ -44,13 +44,14 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     let temperature = this.initialTemperature;
 
     // PASUL 2: Generăm o conformație inițială aleatoare
-    let currentConformation = this.initializeConformation();
-
-    // Salvăm cea mai bună conformație găsită (inițial = cea curentă)
-    let bestConformation = { ...currentConformation };
+    let currentDirections = this.generateRandomDirections();
+    let currentHpEnergy = EnergyCalculator.calculateHPEnergy(this.sequence, currentDirections);
+    let currentFitness  = EnergyCalculator.calculateFitness(this.sequence, currentDirections, 100);
+    let bestHpEnergy    = currentHpEnergy;
+    let bestDirections  = currentDirections;
 
     // Salvăm energia inițială în istoric
-    energyHistory.push({ iteration: 0, energy: currentConformation.energy });
+    energyHistory.push({ iteration: 0, energy: bestHpEnergy });
 
     // Calculăm intervalele pentru logare și actualizare UI
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
@@ -64,17 +65,21 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       }
 
       // PASUL 4: Generăm o conformație vecină (o mică modificare)
-      const neighborConformation = this.generateNeighbor(currentConformation);
+      const currentConformation = { directions: currentDirections, fitness: currentFitness };
+      const neighbor = this.generateNeighbor(currentConformation);
 
       // PASUL 5: Decidem dacă acceptăm sau respingem mișcarea
-      // Folosim criteriul Metropolis (formula Boltzmann)
-      if (this.acceptMove(currentConformation.energy, neighborConformation.energy, temperature)) {
+      // Folosim criteriul Metropolis (formula Boltzmann) — compare fitness, not hpEnergy
+      if (this.acceptMove(currentFitness, neighbor.fitness, temperature)) {
         // Acceptăm mișcarea - trecem la conformația vecină
-        currentConformation = neighborConformation;
+        currentDirections = neighbor.directions.slice();
+        currentHpEnergy = neighbor.hpEnergy;
+        currentFitness  = neighbor.fitness;
 
         // Verificăm dacă e cea mai bună conformație găsită până acum
-        if (currentConformation.energy < bestConformation.energy) {
-          bestConformation = { ...currentConformation };
+        if (neighbor.hpEnergy < bestHpEnergy) {
+          bestHpEnergy   = neighbor.hpEnergy;
+          bestDirections = neighbor.directions.slice();
         }
       }
       // Dacă nu acceptăm, rămânem la conformația curentă
@@ -86,14 +91,14 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       if (iteration % logInterval === 0) {
         energyHistory.push({
           iteration,
-          energy: bestConformation.energy  // Salvăm cea mai bună energie găsită
+          energy: bestHpEnergy  // Salvăm cea mai bună hpEnergy găsită
         });
 
         // Notificăm UI-ul despre progres
         this.onProgress?.({
           iteration,
-          currentEnergy: currentConformation.energy,
-          bestEnergy: bestConformation.energy,
+          currentEnergy: currentHpEnergy,
+          bestEnergy: bestHpEnergy,
           progress: (iteration / this.maxIterations) * 100
         });
       }
@@ -112,7 +117,14 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     // Calculăm timpul de execuție
     const convergenceTime = Date.now() - startTime;
 
-    // Returnăm rezultatul final
+    // Returnăm rezultatul final — energy = hpEnergy pură
+    const bestConformation: Conformation = {
+      sequence: this.sequence,
+      directions: bestDirections,
+      positions: EnergyCalculator.calculatePositions(this.sequence, bestDirections),
+      energy: bestHpEnergy
+    };
+
     return {
       bestConformation,
       energyHistory,
@@ -133,105 +145,58 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   /**
    * Generează o conformație vecină prin mutație mică
    * Schimbă O SINGURĂ direcție din conformația curentă
-   * 
-   * Aceasta este o mutație LOCALĂ - explorăm vecinătatea soluției curente
-   * 
-   * @param conformation - Conformația curentă
-   * @returns Conformation - O conformație vecină (cu o mutație)
+   * Verifică validitatea cu EnergyCalculator.countCollisions() (nu Infinity)
    */
-  private generateNeighbor(conformation: Conformation): Conformation {
-    // Încercăm de mai multe ori să generăm un vecin valid
+  private generateNeighbor(conformation: Conformation & { fitness: number }): Conformation & { fitness: number } {
     const maxAttempts = 10;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      // Copiem direcțiile curente
       const newDirections = [...conformation.directions];
+      const randomIndex   = Math.floor(Math.random() * newDirections.length);
+      const current       = newDirections[randomIndex];
+      const available     = this.possibleDirections.filter(d => d !== current);
 
-      // Alegem o poziție aleatoare de mutat
-      const randomIndex = Math.floor(Math.random() * newDirections.length);
+      newDirections[randomIndex] = available[Math.floor(Math.random() * available.length)];
 
-      // Obținem direcțiile posibile (2D: L,R,U,D sau 3D: L,R,U,D,F,B)
-      const possibleDirections: Direction[] = this.possibleDirections;
+      const positions  = EnergyCalculator.calculatePositions(this.sequence, newDirections);
+      const collisions = EnergyCalculator.countCollisions(positions);
 
-      // Salvăm direcția curentă la poziția aleasă
-      const currentDirection = newDirections[randomIndex];
-
-      // Alegem o direcție diferită (excludem direcția curentă)
-      const availableDirections = possibleDirections.filter(d => d !== currentDirection);
-      const newDirection = availableDirections[Math.floor(Math.random() * availableDirections.length)];
-
-      // Aplicăm mutația
-      newDirections[randomIndex] = newDirection;
-
-      // Creăm conformația vecină
-      const neighbor = EnergyCalculator.createConformation(this.sequence, newDirections);
-
-      // Dacă vecinul e valid (nu are auto-intersecție) sau am epuizat încercările, îl returnăm
-      if (neighbor.energy !== Number.POSITIVE_INFINITY || attempt === maxAttempts - 1) {
-        return neighbor;
+      // Accept if valid (no collisions) OR if we've exhausted all attempts
+      if (collisions === 0 || attempt === maxAttempts - 1) {
+        return {
+          sequence:   this.sequence,
+          directions: newDirections,
+          positions,
+          energy:  EnergyCalculator.calculateHPEnergy(this.sequence, newDirections),
+          fitness: EnergyCalculator.calculateFitness(this.sequence, newDirections, 100),
+        };
       }
-      // Altfel, încercăm din nou cu altă mutație
     }
 
-    // Caz extrem: returnăm conformația originală dacă nu găsim un vecin valid
+    // Fallback: return original conformation unchanged
     return conformation;
   }
 
   /**
    * CRITERIUL METROPOLIS - Decide dacă acceptăm o mișcare
+   * Compară fitness (HP + collision penalty), nu hpEnergy.
    * 
-   * REGULI:
-   * 1. Dacă noua energie e mai mică (mai bună) -> ACCEPTĂM întotdeauna
-   * 2. Dacă noua energie e mai mare (mai proastă) -> ACCEPTĂM cu probabilitate P
-   *    P = exp((E_curent - E_nou) / T) = exp(-ΔE / T)
-   * 
-   * @param currentEnergy - Energia conformației curente
-   * @param newEnergy - Energia conformației vecine
+   * @param currentFitness - Fitness conformației curente
+   * @param newFitness - Fitness conformației vecine
    * @param temperature - Temperatura curentă
-   * @returns boolean - true dacă acceptăm mișcarea, false altfel
    */
-  private acceptMove(currentEnergy: number, newEnergy: number, temperature: number): boolean {
-    // CAZURI SPECIALE pentru energii infinite (conformații invalide)
-
-    // Caz 1: Ambele sunt invalide -> nu acceptăm
-    if (currentEnergy === Number.POSITIVE_INFINITY && newEnergy === Number.POSITIVE_INFINITY) {
-      return false;
-    }
-
-    // Caz 2: Curentă e invalidă, nouă e validă -> ACCEPTĂM întotdeauna
-    if (currentEnergy === Number.POSITIVE_INFINITY && newEnergy !== Number.POSITIVE_INFINITY) {
-      return true;
-    }
-
-    // Caz 3: Curentă e validă, nouă e invalidă -> acceptăm cu probabilitate foarte mică
-    if (currentEnergy !== Number.POSITIVE_INFINITY && newEnergy === Number.POSITIVE_INFINITY) {
-      if (temperature > 0) {
-        // Probabilitate foarte mică de a accepta soluții invalide
-        const acceptanceProbability = Math.exp(-10 / temperature);
-        return Math.random() < acceptanceProbability;
-      }
-      return false;
-    }
-
-    // CAZUL NORMAL: Ambele energii sunt finite
-
-    // Dacă noua conformație e MAI BUNĂ (energie mai mică) -> ACCEPTĂM întotdeauna
-    if (newEnergy < currentEnergy) {
+  private acceptMove(currentFitness: number, newFitness: number, temperature: number): boolean {
+    // Dacă noua conformație e MAI BUNĂ (fitness mai mic) -> ACCEPTĂM întotdeauna
+    if (newFitness < currentFitness) {
       return true;
     }
 
     // Dacă noua conformație e MAI PROASTĂ -> acceptăm cu probabilitate Boltzmann
     if (temperature > 0) {
-      // Formula Boltzmann: P = exp(-ΔE / T)
-      // ΔE = newEnergy - currentEnergy (pozitiv, pentru că newEnergy > currentEnergy)
-      // Echivalent: P = exp((currentEnergy - newEnergy) / T)
-      const acceptanceProbability = Math.exp((currentEnergy - newEnergy) / temperature);
-
-      // Generăm un număr aleatoriu între 0 și 1 și comparăm cu probabilitatea
+      const acceptanceProbability = Math.exp((currentFitness - newFitness) / temperature);
       return Math.random() < acceptanceProbability;
     }
 
-    // Temperatura e 0 și mișcarea e proastă -> nu acceptăm
     return false;
   }
 

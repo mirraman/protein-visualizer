@@ -240,7 +240,6 @@ class ProteinFoldingWorker {
         mutationRate: parameters.mutationRate || 0.2,
         eliteCount: parameters.eliteCount || 2,
         tournamentSize: parameters.tournamentSize || 3,
-        rolloutCount: parameters.rolloutCount || 1,
         initialDirections: parameters.initialDirections,
         onProgress: (progress) => {
           job.progress(progress.progress || 0);

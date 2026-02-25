@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectDB from '@/lib/mongodb';
 import GAPopulation from '@/lib/models/GAPopulation';
 import { getServerSession } from 'next-auth';
 import { authConfig } from '@/auth.config';

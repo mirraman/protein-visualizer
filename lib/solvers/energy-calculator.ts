@@ -42,6 +42,58 @@ export class EnergyCalculator {
   }
 
   /**
+   * Returns PURE H-H contact energy with no collision penalty.
+   * Use this for: energyHistory logging, onProgress reporting, final result output.
+   */
+  static calculateHPEnergy(sequence: string, directions: Direction[]): number {
+    const positions = this.calculatePositions(sequence, directions);
+    return this.calculateContactEnergy(sequence, positions);
+  }
+
+  /**
+   * Returns fitness score for INTERNAL SELECTION only (HP energy + collision penalty).
+   * Use this inside algorithm selection logic, never for reporting or charts.
+   */
+  static calculateFitness(
+    sequence: string,
+    directions: Direction[],
+    penaltyWeight: number = 100
+  ): number {
+    const positions = this.calculatePositions(sequence, directions);
+    const collisions = this.countCollisions(positions);
+    const hp = this.calculateContactEnergy(sequence, positions);
+    return hp + collisions * penaltyWeight;
+  }
+
+  /**
+   * Returns true if the conformation has zero collisions (valid SAW).
+   */
+  static isValid(positions: Position[]): boolean {
+    return this.countCollisions(positions) === 0;
+  }
+
+  /**
+   * Returns the count of H-H topological contacts (positive integer).
+   * Same logic as calculateContactEnergy but returns a positive count for DB storage.
+   */
+  static calculateHHContacts(sequence: string, positions: Position[]): number {
+    let contacts = 0;
+    for (let i = 0; i < sequence.length; i++) {
+      if (sequence[i] === 'H') {
+        for (let j = i + 2; j < sequence.length; j++) {
+          if (sequence[j] === 'H') {
+            const dx = Math.abs(positions[i].x - positions[j].x);
+            const dy = Math.abs(positions[i].y - positions[j].y);
+            const dz = Math.abs(positions[i].z - positions[j].z);
+            if (dx + dy + dz === 1) contacts++;
+          }
+        }
+      }
+    }
+    return contacts;
+  }
+
+  /**
    * Creează un obiect Conformation complet cu poziții și energie
    * Folosit pentru a stoca o conformație cu toate datele ei
    *
@@ -167,7 +219,7 @@ export class EnergyCalculator {
    * @param positions - Pozițiile 3D
    * @returns number - Energia totală (negativă = bună)
    */
-  private static calculateContactEnergy(sequence: string, positions: Position[]): number {
+  static calculateContactEnergy(sequence: string, positions: Position[]): number {
     let energy = 0;
 
     // Parcurgem toate perechile de aminoacizi

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useRef, forwardRef, useImperativeHandle, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -28,16 +28,9 @@ import {
 } from "recharts";
 import { ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Direction } from "@/lib/types";
-import {
-  MonteCarloSolver,
-  SimulatedAnnealingSolver,
-  GeneticAlgorithmSolver,
-  EvolutionStrategiesSolver,
-  EvolutionaryProgrammingSolver,
-  GeneticProgrammingSolver,
-  type SolverResult,
-  type Conformation,
-} from "@/lib/solvers";
+import { EnergyCalculator } from "@/lib/solvers";
+import type { SolverResult, Conformation } from "@/lib/solvers";
+import { useSolver } from "@/hooks/useSolver";
 
 interface ProteinSolverProps {
   sequence: string;
@@ -108,13 +101,41 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
   const [gpCrossoverRate, setGpCrossoverRate] = useState([0.9]);
   const [gpMutationRate, setGpMutationRate] = useState([0.2]);
 
-  // Solver state
-  const [isRunning, setIsRunning] = useState(false);
+  // Solver state (useSolver runs in Web Worker for non-blocking UI)
+  const { run, stop, result, progress: solverProgress, running: isRunning, error: solverError } = useSolver();
   const [progress, setProgress] = useState(0);
   const [currentResult, setCurrentResult] = useState<SolverResult | null>(null);
   const [bestConformation, setBestConformation] = useState<Conformation | null>(
     null
   );
+
+  // Sync progress from worker
+  useEffect(() => {
+    if (solverProgress) {
+      setProgress(solverProgress.progress ?? 0);
+    }
+  }, [solverProgress]);
+
+  // Sync result from worker -> update state and notify parent
+  useEffect(() => {
+    if (!result) return;
+
+    setCurrentResult(result);
+    setBestConformation(result.bestConformation);
+    setProgress(100);
+
+    const hhContacts = EnergyCalculator.calculateHHContacts(
+      result.bestConformation.sequence,
+      result.bestConformation.positions
+    );
+    onOptimizationComplete(
+      result.bestConformation.directions,
+      result.bestConformation.energy,
+      result.bestConformation.positions,
+      hhContacts
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onOptimizationComplete from props
+  }, [result]);
 
   // UI state
   const [showDetails, setShowDetails] = useState(false);
@@ -136,148 +157,77 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
     }
   };
 
-  const runSolver = async () => {
+  const algorithmToWorkerName: Record<AlgorithmType, string> = {
+    "monte-carlo": "monte-carlo",
+    "simulated-annealing": "simulated-annealing",
+    "ga": "genetic-algorithm",
+    "es": "evolution-strategies",
+    "ep": "evolutionary-programming",
+    "gp": "genetic-programming",
+  };
+
+  const runSolver = () => {
     if (!sequence) return;
 
-    setIsRunning(true);
     setProgress(0);
     setCurrentResult(null);
     setBestConformation(null);
 
-    try {
-      let solver;
+    const baseParams = {
+      sequence,
+      maxIterations: iterations[0],
+      initialDirections,
+      latticeType,
+    };
 
-      if (algorithmType === "monte-carlo") {
-        solver = new MonteCarloSolver({
-          sequence,
-          maxIterations: iterations[0],
-          populationSize: populationSize[0],
-          initialDirections,
-          latticeType,
-          onProgress: (progressData) => {
-            setProgress(progressData.progress || 0);
-          },
-        });
-      } else if (algorithmType === "simulated-annealing") {
-        solver = new SimulatedAnnealingSolver({
-          sequence,
-          maxIterations: iterations[0],
-          initialTemperature: temperature[0],
-          finalTemperature: 0.01,
-          coolingRate: 0.95,
-          initialDirections,
-          latticeType,
-          onProgress: (progressData) => {
-            setProgress(progressData.progress || 0);
-          },
-        });
-      } else if (algorithmType === "ga") {
-        solver = new GeneticAlgorithmSolver({
-          sequence,
-          maxIterations: iterations[0],
-          populationSize: populationSize[0],
-          crossoverRate: crossoverRate[0],
-          mutationRate: mutationRate[0],
-          eliteCount: eliteCount[0],
-          selectionPressure: selectionPressure[0],
-          initialDirections,
-          latticeType,
-          onProgress: (progressData) => {
-            setProgress(progressData.progress || 0);
-          },
-        });
-      } else if (algorithmType === "es") {
-        solver = new EvolutionStrategiesSolver({
-          sequence,
-          maxIterations: iterations[0],
-          mu: mu[0],
-          lambda: lambda[0],
-          initialMutationRate: initialMutationRate[0],
-          mutationDecay: 0.97,
-          mutationBoost: 1.1,
-          stagnationWindow: 10,
-          plusSelection: true,
-          initialDirections,
-          latticeType,
-          onProgress: (progressData) => {
-            setProgress(progressData.progress || 0);
-          },
-        });
-      } else if (algorithmType === "ep") {
-        solver = new EvolutionaryProgrammingSolver({
-          sequence,
-          maxIterations: iterations[0],
-          populationSize: populationSize[0],
-          mutationRate: epMutationRate[0],
-          tournamentSize: tournamentSize[0],
-          eliteCount: 2,
-          initialDirections,
-          latticeType,
-          onProgress: (progressData) => {
-            setProgress(progressData.progress || 0);
-          },
-        });
-      } else if (algorithmType === "gp") {
-        solver = new GeneticProgrammingSolver({
-          sequence,
-          maxIterations: iterations[0],
-          populationSize: populationSize[0],
-          maxTreeDepth: maxTreeDepth[0],
-          crossoverRate: gpCrossoverRate[0],
-          mutationRate: gpMutationRate[0],
-          eliteCount: eliteCount[0],
-          tournamentSize: tournamentSize[0],
-          rolloutCount: 1,
-          initialDirections,
-          latticeType,
-          onProgress: (progressData) => {
-            setProgress(progressData.progress || 0);
-          },
-        });
-      } else {
-        throw new Error(`Unknown algorithm type: ${algorithmType}`);
-      }
-
-      // Run solver with progress updates
-      const result = await solver.solve();
-
-      // Cleanup: Setăm solver-ul la null pentru a permite garbage collection
-      // Cromozomii din memorie vor fi eliberați automat când solver-ul este garbage collected
-      solver = null as any;
-
-      setCurrentResult(result);
-      setBestConformation(result.bestConformation);
-      setProgress(100);
-
-      // Calculate H-H contacts for the best conformation
-      let hhContacts = 0;
-      for (let i = 0; i < result.bestConformation.sequence.length; i++) {
-        if (result.bestConformation.sequence[i] === "H") {
-          for (let j = i + 2; j < result.bestConformation.sequence.length; j++) {
-            if (result.bestConformation.sequence[j] === "H") {
-              const dx = Math.abs(result.bestConformation.positions[i].x - result.bestConformation.positions[j].x);
-              const dy = Math.abs(result.bestConformation.positions[i].y - result.bestConformation.positions[j].y);
-              const dz = Math.abs(result.bestConformation.positions[i].z - result.bestConformation.positions[j].z);
-              if (dx + dy + dz === 1) {
-                hhContacts++;
-              }
-            }
+    const params =
+      algorithmType === "monte-carlo"
+        ? { ...baseParams, populationSize: populationSize[0] }
+        : algorithmType === "simulated-annealing"
+        ? { ...baseParams, initialTemperature: temperature[0], finalTemperature: 0.01, coolingRate: 0.95 }
+        : algorithmType === "ga"
+        ? {
+            ...baseParams,
+            populationSize: populationSize[0],
+            crossoverRate: crossoverRate[0],
+            mutationRate: mutationRate[0],
+            eliteCount: eliteCount[0],
+            selectionPressure: selectionPressure[0],
           }
-        }
-      }
+        : algorithmType === "es"
+        ? {
+            ...baseParams,
+            mu: mu[0],
+            lambda: lambda[0],
+            initialMutationRate: initialMutationRate[0],
+            mutationDecay: 0.97,
+            mutationBoost: 1.1,
+            stagnationWindow: 10,
+            plusSelection: true,
+          }
+        : algorithmType === "ep"
+        ? {
+            ...baseParams,
+            populationSize: populationSize[0],
+            mutationRate: epMutationRate[0],
+            tournamentSize: tournamentSize[0],
+            eliteCount: 2,
+          }
+        : {
+            ...baseParams,
+            populationSize: populationSize[0],
+            maxTreeDepth: maxTreeDepth[0],
+            crossoverRate: gpCrossoverRate[0],
+            mutationRate: gpMutationRate[0],
+            eliteCount: eliteCount[0],
+            tournamentSize: tournamentSize[0],
+          };
 
-      // Notify parent component with full results
-      onOptimizationComplete(
-        result.bestConformation.directions,
-        result.bestConformation.energy,
-        result.bestConformation.positions,
-        hhContacts
-      );
-    } catch (error) {
-      console.error("Solver error:", error);
-    } finally {
-      setIsRunning(false);
-    }
+    run(algorithmToWorkerName[algorithmType], params);
+  };
+
+  const stopSolver = () => {
+    stop();
   };
 
   if (!sequence) {
@@ -640,13 +590,20 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                 </div>
               )}
 
-              <Button
-                onClick={runSolver}
-                disabled={isRunning}
-                className="w-full"
-              >
-                {isRunning ? "Running..." : "Start Optimization"}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={runSolver}
+                  disabled={isRunning}
+                  className="flex-1"
+                >
+                  {isRunning ? "Running..." : "Start Optimization"}
+                </Button>
+                {isRunning && (
+                  <Button onClick={stopSolver} variant="outline">
+                    Stop
+                  </Button>
+                )}
+              </div>
 
               {isRunning && (
                 <div className="space-y-2">

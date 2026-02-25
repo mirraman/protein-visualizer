@@ -6,8 +6,9 @@ import type { Direction } from "../types";
  * Tipul Individual pentru EP
  */
 type Individual = {
-  directions: Direction[];  // Conformația - secvența de direcții
-  energy: number;           // Fitness-ul - energia
+  directions: Direction[];
+  hpEnergy: number;   // HP pură — pentru raportare
+  energy: number;     // Fitness (HP + penalty) — pentru selecție
 };
 
 /**
@@ -52,7 +53,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
 
     // Găsim cel mai bun individ
     let best = this.getBest();
-    energyHistory.push({ iteration: 0, energy: best.energy });
+    energyHistory.push({ iteration: 0, energy: best.hpEnergy });
 
     // Intervalele pentru logging
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
@@ -73,10 +74,11 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
         // MUTAȚIE: Creăm un copil prin mutația părintelui
         const childDirs = this.mutate(parent.directions);
 
-        // EVALUARE: Calculăm fitness-ul copilului
+        // EVALUARE: Calculăm fitness și hpEnergy
         const child: Individual = {
           directions: childDirs,
-          energy: EnergyCalculator.calculateEnergy(this.sequence, childDirs)
+          hpEnergy: EnergyCalculator.calculateHPEnergy(this.sequence, childDirs),
+          energy:   EnergyCalculator.calculateFitness(this.sequence, childDirs, 100),
         };
 
         // Adăugăm copilul în noua generație
@@ -94,13 +96,13 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
         best = currentBest;
       }
 
-      // Logging și UI
+      // Logging și UI — folosim hpEnergy pentru raportare
       if (iteration % logInterval === 0) {
-        energyHistory.push({ iteration, energy: best.energy });
+        energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
-          currentEnergy: currentBest.energy,
-          bestEnergy: best.energy,
+          currentEnergy: currentBest.hpEnergy,
+          bestEnergy: best.hpEnergy,
           progress: (iteration / this.maxIterations) * 100
         });
       }
@@ -110,13 +112,13 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
       }
     }
 
-    // Construim rezultatul final
+    // Construim rezultatul final — energy = hpEnergy
     const endTime = Date.now();
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
       positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
-      energy: best.energy
+      energy: best.hpEnergy
     };
 
     return {
@@ -134,12 +136,11 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
     const arr: Individual[] = [];
 
     for (let i = 0; i < this.populationSize; i++) {
-      // Generăm direcții aleatorii
       const d = this.generateRandomDirections();
-      // Calculăm energia și creăm individul
       arr.push({
         directions: d,
-        energy: EnergyCalculator.calculateEnergy(this.sequence, d)
+        hpEnergy: EnergyCalculator.calculateHPEnergy(this.sequence, d),
+        energy:   EnergyCalculator.calculateFitness(this.sequence, d, 100),
       });
     }
 
@@ -163,32 +164,58 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
     return picks.reduce((b, c) => (c.energy < b.energy ? c : b), picks[0]);
   }
 
+  private pivotMove(dirs: Direction[]): Direction[] {
+    const result = dirs.slice();
+    const n = result.length;
+    if (n < 2) return result;
+
+    const pivotIdx = 1 + Math.floor(Math.random() * (n - 1));
+
+    const rotateCW: Record<Direction, Direction>  = { R: 'D', D: 'L', L: 'U', U: 'R', F: 'F', B: 'B' };
+    const rotateCCW: Record<Direction, Direction> = { R: 'U', U: 'L', L: 'D', D: 'R', F: 'F', B: 'B' };
+    const rotate = Math.random() < 0.5 ? rotateCW : rotateCCW;
+
+    if (Math.random() < 0.5) {
+      for (let i = pivotIdx; i < n; i++) result[i] = rotate[result[i]];
+    } else {
+      for (let i = 0; i < pivotIdx; i++) result[i] = rotate[result[i]];
+    }
+
+    return result;
+  }
+
+  private pullMove(dirs: Direction[]): Direction[] {
+    const result = dirs.slice();
+    const n = result.length;
+    if (n < 3) return result;
+
+    const start = Math.floor(Math.random() * (n - 2));
+    const len   = 1 + Math.floor(Math.random() * Math.min(3, n - start - 1));
+
+    const flip: Record<Direction, Direction> = { R: 'L', L: 'R', U: 'D', D: 'U', F: 'B', B: 'F' };
+    const segment = result.slice(start, start + len + 1).reverse().map(d => flip[d]);
+
+    for (let i = 0; i <= len; i++) result[start + i] = segment[i];
+
+    return result;
+  }
+
   /**
-   * MUTAȚIE
-   * Pentru fiecare direcție, cu probabilitate mutationRate, o schimbăm
-   * 
-   * În EP tradițional, mutația e adesea Gaussiană pentru valori continue.
-   * Pentru reprezentarea noastră discretă (direcții), folosim mutație uniformă.
-   * 
-   * @param genes - Secvența de direcții a părintelui
-   * @returns Direction[] - Secvența mutată pentru copil
+   * MUTAȚIE — pivot/pull moves + 10% point mutation
    */
   private mutate(genes: Direction[]): Direction[] {
-    // Copiem direcțiile părintelui
-    const dirs = genes.slice();
+    let dirs = genes.slice();
+    const roll = Math.random();
 
-    // Alfabetul de direcții posibile
-    const alphabet: Direction[] = this.possibleDirections;
-
-    // Pentru fiecare direcție
-    for (let i = 0; i < dirs.length; i++) {
-      // Cu probabilitate mutationRate
-      if (Math.random() < this.mutationRate) {
-        // Schimbăm direcția cu alta diferită
-        const current = dirs[i];
-        const choices = alphabet.filter(d => d !== current);
-        dirs[i] = choices[Math.floor(Math.random() * choices.length)];
-      }
+    if (roll < 0.6) {
+      dirs = this.pivotMove(dirs);
+    } else if (roll < 0.9) {
+      dirs = this.pullMove(dirs);
+    } else {
+      const idx     = Math.floor(Math.random() * dirs.length);
+      const current = dirs[idx];
+      const choices = this.possibleDirections.filter(d => d !== current);
+      dirs[idx]     = choices[Math.floor(Math.random() * choices.length)];
     }
 
     return dirs as Direction[];

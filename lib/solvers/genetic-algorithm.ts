@@ -1,10 +1,7 @@
 // Importăm clasele de bază și tipurile
 import { BaseSolver, type SolverResult, type Conformation, type GeneticAlgorithmParameters } from "./types";
 import type { Direction } from "../types";
-import * as GAEnergyCalculator from "./ga-energy-calculator";
-import GAPopulation, { type IChromosome } from "../models/GAPopulation";
-import connectDB from "../mongodb";
-import mongoose from "mongoose";
+import { EnergyCalculator } from "./energy-calculator";
 
 /**
  * Tipul Individual - Reprezintă un cromozom în algoritm
@@ -49,11 +46,6 @@ export class GeneticAlgorithmSolver extends BaseSolver {
 
   private population: Individual[] = [];
 
-  private saveGenerations: boolean;
-  private userId?: string;
-  private experimentName?: string;
-  private dbConnected: boolean = false;
-
   constructor(parameters: GeneticAlgorithmParameters) {
     super(parameters);
     this.populationSize = parameters.populationSize;
@@ -61,9 +53,6 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     this.mutationRate = parameters.mutationRate;
     this.eliteCount = parameters.eliteCount;
     this.selectionPressure = parameters.selectionPressure ?? 1.5;
-    this.saveGenerations = parameters.saveGenerations || false;
-    this.userId = parameters.userId;
-    this.experimentName = parameters.experimentName;
   }
 
   /**
@@ -73,25 +62,11 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const startTime = Date.now();
     const energyHistory: { iteration: number; energy: number }[] = [];
 
-    if (this.saveGenerations && this.userId) {
-      try {
-        await connectDB();
-        this.dbConnected = true;
-      } catch (error) {
-        console.error('Failed to connect to database for saving generations:', error);
-      }
-    }
-
     // PASUL 1: INIȚIALIZARE
     this.population = this.initializePopulation();
 
     let best = this.getBestIndividual();
-    // Raportăm hpEnergy pură, nu energia cu penalizări
     energyHistory.push({ iteration: 0, energy: best.hpEnergy });
-
-    if (this.saveGenerations && this.userId && this.dbConnected) {
-      await this.saveGeneration(0);
-    }
 
     const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
     const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
@@ -141,7 +116,6 @@ export class GeneticAlgorithmSolver extends BaseSolver {
       }
 
       if (iteration % logInterval === 0) {
-        // Raportăm hpEnergy pură în istoric
         energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
@@ -149,10 +123,6 @@ export class GeneticAlgorithmSolver extends BaseSolver {
           bestEnergy: best.hpEnergy,
           progress: (iteration / this.maxIterations) * 100
         });
-
-        if (this.saveGenerations && this.userId && this.dbConnected) {
-          await this.saveGeneration(iteration);
-        }
       }
 
       if (iteration % yieldInterval === 0) {
@@ -164,7 +134,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const bestConformation: Conformation = {
       sequence: this.sequence,
       directions: best.directions,
-      positions: GAEnergyCalculator.calculatePositions(this.sequence, best.directions),
+      positions: EnergyCalculator.calculatePositions(this.sequence, best.directions),
       energy: best.hpEnergy  // Returnăm energia HP pură ca rezultat final
     };
 
@@ -185,14 +155,13 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    *  Separă hpEnergy (pură, pentru raportare) de energy (cu penalizări, pentru selecție)
    */
   private evaluateIndividual(directions: Direction[]): Individual {
-    const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
-    const collisions = GAEnergyCalculator.countCollisions(positions);
-    const hpEnergy = GAEnergyCalculator.calculateContactEnergy(this.sequence, positions);
+    const positions  = EnergyCalculator.calculatePositions(this.sequence, directions);
+    const collisions = EnergyCalculator.countCollisions(positions);
+    const hpEnergy   = EnergyCalculator.calculateContactEnergy(this.sequence, positions);
 
-    // Energia pentru selecție internă: HP + penalizare coliziuni
-    // PENALTY_WEIGHT = 15 permite GA să exploreze tradeoffs
-    const PENALTY_WEIGHT = 15;
-    const energy = hpEnergy + (collisions * PENALTY_WEIGHT);
+    // PENALTY_WEIGHT = 100 — same as all other algorithms
+    const PENALTY_WEIGHT = 100;
+    const energy = hpEnergy + collisions * PENALTY_WEIGHT;
 
     return { directions, hpEnergy, energy, collisions };
   }
@@ -220,8 +189,8 @@ export class GeneticAlgorithmSolver extends BaseSolver {
 
     while (attempts < 100) {
       const candidate = this.generateRandomDirections().slice(0, length);
-      const positions = GAEnergyCalculator.calculatePositions(this.sequence, candidate);
-      if (GAEnergyCalculator.isValid(positions)) {
+      const positions = EnergyCalculator.calculatePositions(this.sequence, candidate);
+      if (EnergyCalculator.isValid(positions)) {
         return candidate;
       }
       attempts++;
@@ -394,59 +363,33 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    * 4. Dacă tot eșuează, generează complet din nou folosind SAW
    */
   private repairChromosome(directions: Direction[]): Direction[] {
-    const positions = GAEnergyCalculator.calculatePositions(this.sequence, directions);
-    if (GAEnergyCalculator.countCollisions(positions) === 0) {
-      return directions;
-    }
+    const positions = EnergyCalculator.calculatePositions(this.sequence, directions);
+    if (EnergyCalculator.countCollisions(positions) === 0) return directions;
 
-    // Detectăm prima coliziune
+    // Find first collision index
     const occupied = new Set<string>();
     let collisionIndex = -1;
-
     for (let i = 0; i < positions.length; i++) {
-      const posKey = `${positions[i].x},${positions[i].y},${positions[i].z}`;
-      if (occupied.has(posKey)) {
-        collisionIndex = i;
-        break;
-      }
-      occupied.add(posKey);
+      const key = `${positions[i].x},${positions[i].y},${positions[i].z}`;
+      if (occupied.has(key)) { collisionIndex = i; break; }
+      occupied.add(key);
     }
-
     if (collisionIndex === -1) return directions;
 
+    // Step 1: Try minimal single-gene repair at the collision point
     const repaired = directions.slice();
-
-    // Pasul 1: Încearcă modificare minimă (doar gena la colisionIndex - 1)
     const repairAt = collisionIndex - 1;
     if (repairAt >= 0) {
-      const shuffledDirs = [...this.possibleDirections].sort(() => Math.random() - 0.5);
-      for (const newDir of shuffledDirs) {
+      const shuffled = [...this.possibleDirections].sort(() => Math.random() - 0.5);
+      for (const newDir of shuffled) {
         if (newDir === repaired[repairAt]) continue;
         repaired[repairAt] = newDir;
-        const newPositions = GAEnergyCalculator.calculatePositions(this.sequence, repaired);
-        if (GAEnergyCalculator.countCollisions(newPositions) === 0) {
-          return repaired;
-        }
+        const newPos = EnergyCalculator.calculatePositions(this.sequence, repaired);
+        if (EnergyCalculator.countCollisions(newPos) === 0) return repaired;
       }
     }
 
-    // Pasul 2: Resampelează de la punctul de coliziune (ca înainte, dar cu mai multe încercări)
-    const maxRepairAttempts = 20; // Crescut de la 10 la 20
-    for (let attempt = 0; attempt < maxRepairAttempts; attempt++) {
-      for (let i = collisionIndex - 1; i < repaired.length; i++) {
-        if (i >= 0) {
-          repaired[i] = this.possibleDirections[
-            Math.floor(Math.random() * this.possibleDirections.length)
-          ];
-        }
-      }
-      const newPositions = GAEnergyCalculator.calculatePositions(this.sequence, repaired);
-      if (GAEnergyCalculator.countCollisions(newPositions) === 0) {
-        return repaired;
-      }
-    }
-
-    // Pasul 3: Fallback complet cu SAW
+    // Step 2: Full SAW fallback
     return this.generateInitialDirections();
   }
 
@@ -472,59 +415,4 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     }, this.population[0]);
   }
 
-  /**
-   * Calculează numărul de contacte H-H pentru o conformație
-   */
-  private calculateHHContacts(sequence: string, positions: { x: number; y: number; z: number }[]): number {
-    let contacts = 0;
-    for (let i = 0; i < sequence.length; i++) {
-      if (sequence[i] === "H") {
-        for (let j = i + 2; j < sequence.length; j++) {
-          if (sequence[j] === "H") {
-            const dx = Math.abs(positions[i].x - positions[j].x);
-            const dy = Math.abs(positions[i].y - positions[j].y);
-            const dz = Math.abs(positions[i].z - positions[j].z);
-            if (dx + dy + dz === 1) contacts++;
-          }
-        }
-      }
-    }
-    return contacts;
-  }
-
-  /**
-   * Salvează toți cromozomii din generația curentă în baza de date
-   */
-  private async saveGeneration(generation: number): Promise<void> {
-    if (!this.userId || !this.dbConnected) return;
-
-    try {
-      const chromosomes: IChromosome[] = this.population.map(ind => {
-        const positions = GAEnergyCalculator.calculatePositions(this.sequence, ind.directions);
-        const hhContacts = GAEnergyCalculator.calculateHHContacts(this.sequence, positions);
-        return {
-          directions: ind.directions,
-          energy: ind.hpEnergy, // FIX: Salvăm energia HP pură, nu cea cu penalizări
-          positions,
-          hhContacts
-        };
-      });
-
-      const energies = chromosomes.map(c => c.energy);
-      const bestEnergy = Math.min(...energies);
-      const averageEnergy = energies.reduce((a, b) => a + b, 0) / energies.length;
-
-      await GAPopulation.create({
-        userId: new mongoose.Types.ObjectId(this.userId),
-        sequence: this.sequence,
-        generation,
-        chromosomes,
-        bestEnergy,
-        averageEnergy,
-        experimentName: this.experimentName,
-      });
-    } catch (error) {
-      console.error(`Error saving generation ${generation}:`, error);
-    }
-  }
 }
