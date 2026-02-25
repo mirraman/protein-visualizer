@@ -37,6 +37,7 @@ export interface SimulatedAnnealingParameters extends SolverParameters {
   initialTemperature: number;
   finalTemperature: number;
   coolingRate: number;
+  stagnationWindow?: number; // restarts after N iters with no improvement
 }
 
 export interface GeneticAlgorithmParameters extends SolverParameters {

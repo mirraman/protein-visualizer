@@ -175,6 +175,8 @@ const ProteinSolverRefactored: React.FC<ProteinSolverRefactoredProps> = ({
         finalTemperature:
           algorithmType === "simulated-annealing" ? 0.01 : undefined,
         coolingRate: algorithmType === "simulated-annealing" ? 0.95 : undefined,
+        stagnationWindow:
+          algorithmType === "simulated-annealing" ? 800 : undefined,
         // GA parameters
         crossoverRate: algorithmType === "ga" ? crossoverRate[0] : undefined,
         mutationRate:

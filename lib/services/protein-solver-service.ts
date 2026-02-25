@@ -37,6 +37,7 @@ export interface SolverConfig {
   initialTemperature?: number; // For Simulated Annealing
   finalTemperature?: number;
   coolingRate?: number;
+  stagnationWindow?: number; // SA restart after N iters with no improvement
   // ES-specific
   mu?: number;
   lambda?: number;
@@ -150,6 +151,7 @@ export class ProteinSolverService {
           initialTemperature: config.initialTemperature || 5.0,
           finalTemperature: config.finalTemperature || 0.01,
           coolingRate: config.coolingRate || 0.95,
+          stagnationWindow: config.stagnationWindow,
           initialDirections: config.initialDirections,
           latticeType: config.latticeType,
           onProgress: this.handleProgress.bind(this)

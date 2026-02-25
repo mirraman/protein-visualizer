@@ -38,3 +38,16 @@ next-env.d.ts
 # Cursor
 CursorPrompts.*md
 *.md
+
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico
+*.webp
+*.svg
+*.pdf
+*.docx
+*.doc

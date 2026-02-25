@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "benchmark": "ts-node --transpile-only -P tsconfig.scripts.json scripts/run-benchmark.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rds-data": "latest",

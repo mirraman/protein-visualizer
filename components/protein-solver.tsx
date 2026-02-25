@@ -185,7 +185,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
       algorithmType === "monte-carlo"
         ? { ...baseParams, populationSize: populationSize[0] }
         : algorithmType === "simulated-annealing"
-        ? { ...baseParams, initialTemperature: temperature[0], finalTemperature: 0.01, coolingRate: 0.95 }
+        ? { ...baseParams, initialTemperature: temperature[0], finalTemperature: 0.01, coolingRate: 0.95, stagnationWindow: 800 }
         : algorithmType === "ga"
         ? {
             ...baseParams,

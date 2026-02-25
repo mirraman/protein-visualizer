@@ -20,109 +20,120 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   // Rata de răcire - cât de repede scade temperatura
   private coolingRate: number;
 
+  // Restart după N iterații fără îmbunătățire
+  private stagnationWindow: number;
+
   /**
    * Constructor - Inițializează solver-ul cu parametrii de temperatură
    */
   constructor(parameters: SimulatedAnnealingParameters) {
     super(parameters);
-    this.initialTemperature = parameters.initialTemperature;  // Ex: 100
-    this.finalTemperature = parameters.finalTemperature;      // Ex: 0.001
-    this.coolingRate = parameters.coolingRate;                // Ex: 0.995
+    this.initialTemperature = parameters.initialTemperature;
+    this.finalTemperature   = parameters.finalTemperature;
+    this.coolingRate        = parameters.coolingRate;
+    this.stagnationWindow   = parameters.stagnationWindow ?? 800;
   }
 
   /**
    * METODA PRINCIPALĂ - Rulează algoritmul Simulated Annealing
    */
   async solve(): Promise<SolverResult> {
-    // Marcăm timpul de start
     const startTime = Date.now();
-
-    // Array pentru istoricul energiilor
     const energyHistory: { iteration: number; energy: number }[] = [];
+    const stagnationWindow = this.stagnationWindow;
 
-    // PASUL 1: Inițializăm temperatura la valoarea inițială (ridicată)
-    let temperature = this.initialTemperature;
+    // Global best — survives across restarts
+    let bestHpEnergy  = Infinity;
+    let bestDirections: Direction[] = [];
 
-    // PASUL 2: Generăm o conformație inițială aleatoare
-    let currentDirections = this.generateRandomDirections();
-    let currentHpEnergy = EnergyCalculator.calculateHPEnergy(this.sequence, currentDirections);
-    let currentFitness  = EnergyCalculator.calculateFitness(this.sequence, currentDirections, 100);
-    let bestHpEnergy    = currentHpEnergy;
-    let bestDirections  = currentDirections;
+    // Current trajectory state — use greedy init 70% of the time for better starting point
+    const useGreedy = Math.random() < 0.7;
+    let currentDirections = useGreedy
+      ? this.generateGreedyDirections()
+      : this.generateRandomDirections();
+    let currentHpEnergy   = EnergyCalculator.calculateHPEnergy(this.sequence, currentDirections);
+    let currentFitness    = EnergyCalculator.calculateFitness(this.sequence, currentDirections, 100);
+    let temperature       = this.initialTemperature;
 
-    // Salvăm energia inițială în istoric
+    // Stagnation tracking
+    let lastImprovedAt = 0;
+
+    if (currentHpEnergy < bestHpEnergy) {
+      bestHpEnergy   = currentHpEnergy;
+      bestDirections = currentDirections.slice();
+    }
+
     energyHistory.push({ iteration: 0, energy: bestHpEnergy });
 
-    // PASUL 3: BUCLA PRINCIPALĂ - Optimizare Simulated Annealing
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
       if (this.hasReachedTarget(bestHpEnergy)) break;
 
-      // PASUL 4: Generăm o conformație vecină (o mică modificare)
-      const currentConformation = { directions: currentDirections, fitness: currentFitness };
+      // ── STAGNATION RESTART ─────────────────────────────────────
+      if (iteration - lastImprovedAt > stagnationWindow) {
+        // Alternate greedy/random on restart for diversity
+        const useGreedy = Math.random() < 0.5;
+        currentDirections = useGreedy
+          ? this.generateGreedyDirections()
+          : this.generateRandomDirections();
+        currentHpEnergy   = EnergyCalculator.calculateHPEnergy(this.sequence, currentDirections);
+        currentFitness    = EnergyCalculator.calculateFitness(this.sequence, currentDirections, 100);
+        temperature       = this.initialTemperature;
+        lastImprovedAt    = iteration;
+      }
+      // ──────────────────────────────────────────────────────────
+
+      const currentConformation: Conformation & { fitness: number } = {
+        sequence: this.sequence,
+        directions: currentDirections,
+        energy: currentHpEnergy,
+        positions: EnergyCalculator.calculatePositions(this.sequence, currentDirections),
+        fitness: currentFitness
+      };
       const neighbor = this.generateNeighbor(currentConformation);
 
-      // PASUL 5: Decidem dacă acceptăm sau respingem mișcarea
-      // Folosim criteriul Metropolis (formula Boltzmann) — compare fitness, not hpEnergy
       if (this.acceptMove(currentFitness, neighbor.fitness, temperature)) {
-        // Acceptăm mișcarea - trecem la conformația vecină
         currentDirections = neighbor.directions.slice();
-        currentHpEnergy = neighbor.hpEnergy;
-        currentFitness  = neighbor.fitness;
+        currentHpEnergy   = neighbor.energy;
+        currentFitness    = neighbor.fitness;
 
-        // Verificăm dacă e cea mai bună conformație găsită până acum
-        if (neighbor.hpEnergy < bestHpEnergy) {
-          bestHpEnergy   = neighbor.hpEnergy;
+        if (neighbor.energy < bestHpEnergy) {
+          bestHpEnergy   = neighbor.energy;
           bestDirections = neighbor.directions.slice();
+          lastImprovedAt = iteration;
         }
       }
-      // Dacă nu acceptăm, rămânem la conformația curentă
 
-      // PASUL 6: Răcim temperatura conform programului de răcire
       temperature = this.updateTemperature(temperature, iteration);
+      if (temperature < this.finalTemperature) {
+        temperature = this.finalTemperature;
+      }
 
-      // PASUL 7: Înregistrăm statistici la intervale regulate
       if (iteration % this.logInterval === 0) {
-        energyHistory.push({
-          iteration,
-          energy: bestHpEnergy  // Salvăm cea mai bună hpEnergy găsită
-        });
-
-        // Notificăm UI-ul despre progres
+        energyHistory.push({ iteration, energy: bestHpEnergy });
         this.onProgress?.({
           iteration,
           currentEnergy: currentHpEnergy,
-          bestEnergy: bestHpEnergy,
-          progress: (iteration / this.maxIterations) * 100
+          bestEnergy:    bestHpEnergy,
+          progress:      (iteration / this.maxIterations) * 100,
         });
       }
 
       if (iteration % this.yieldInterval === 0) {
         await this.yieldToFrame();
       }
-
-      // TERMINARE TIMPURIE: dacă temperatura a scăzut sub pragul minim
-      if (temperature < this.finalTemperature) {
-        break;
-      }
     }
 
-    // Calculăm timpul de execuție
-    const convergenceTime = Date.now() - startTime;
-
-    // Returnăm rezultatul final — energy = hpEnergy pură
-    const bestConformation: Conformation = {
-      sequence: this.sequence,
-      directions: bestDirections,
-      positions: EnergyCalculator.calculatePositions(this.sequence, bestDirections),
-      energy: bestHpEnergy
-    };
-
     return {
-      bestConformation,
+      bestConformation: {
+        sequence:   this.sequence,
+        directions: bestDirections,
+        positions:  EnergyCalculator.calculatePositions(this.sequence, bestDirections),
+        energy:     bestHpEnergy,
+      },
       energyHistory,
       totalIterations: this.maxIterations,
-      convergenceTime
+      convergenceTime: Date.now() - startTime,
     };
   }
 
@@ -136,26 +147,37 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   }
 
   /**
-   * Generează o conformație vecină prin mutație mică
-   * Schimbă O SINGURĂ direcție din conformația curentă
-   * Verifică validitatea cu EnergyCalculator.countCollisions() (nu Infinity)
+   * Generates a neighbor conformation using structural moves.
+   *
+   * Move distribution (tuned for SA on 2D HP lattice):
+   *   60% pivot move  — rotates head or tail segment around a random pivot
+   *   30% pull move   — reverses a short local segment
+   *   10% single flip — changes one tail gene (kept for fine-grained search)
+   *
+   * All moves preserve the self-avoiding walk property or are retried.
+   * Falls back to the current conformation only if all attempts fail.
    */
-  private generateNeighbor(conformation: Conformation & { fitness: number }): Conformation & { fitness: number } {
-    const maxAttempts = 10;
+  private generateNeighbor(
+    conformation: Conformation & { fitness: number }
+  ): Conformation & { fitness: number } {
+    const maxAttempts = 15;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const newDirections = [...conformation.directions];
-      const randomIndex   = Math.floor(Math.random() * newDirections.length);
-      const current       = newDirections[randomIndex];
-      const available     = this.possibleDirections.filter(d => d !== current);
+      const roll = Math.random();
+      let newDirections: Direction[];
 
-      newDirections[randomIndex] = available[Math.floor(Math.random() * available.length)];
+      if (roll < 0.6) {
+        newDirections = this.pivotMove(conformation.directions);
+      } else if (roll < 0.9) {
+        newDirections = this.pullMove(conformation.directions);
+      } else {
+        newDirections = this.singleFlip(conformation.directions);
+      }
 
       const positions  = EnergyCalculator.calculatePositions(this.sequence, newDirections);
       const collisions = EnergyCalculator.countCollisions(positions);
 
-      // Accept if valid (no collisions) OR if we've exhausted all attempts
-      if (collisions === 0 || attempt === maxAttempts - 1) {
+      if (collisions === 0) {
         return {
           sequence:   this.sequence,
           directions: newDirections,
@@ -166,8 +188,74 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       }
     }
 
-    // Fallback: return original conformation unchanged
+    // Fallback: return original unchanged
     return conformation;
+  }
+
+  /**
+   * Pivot move: picks a random pivot index and rotates either the head
+   * segment [0..pivot] or the tail segment [pivot..end] by 90° CW or CCW.
+   *
+   * This is the standard move for 2D lattice protein folding — it rotates
+   * a contiguous segment while keeping the rest fixed, producing a new
+   * conformation that is very likely to be collision-free.
+   */
+  private pivotMove(dirs: Direction[]): Direction[] {
+    const result = dirs.slice();
+    const n = result.length;
+    if (n < 2) return result;
+
+    const pivotIdx = 1 + Math.floor(Math.random() * (n - 1));
+
+    const rotateCW: Record<Direction, Direction>  = { R: 'D', D: 'L', L: 'U', U: 'R', F: 'F', B: 'B' };
+    const rotateCCW: Record<Direction, Direction> = { R: 'U', U: 'L', L: 'D', D: 'R', F: 'F', B: 'B' };
+    const rotate = Math.random() < 0.5 ? rotateCW : rotateCCW;
+
+    if (Math.random() < 0.5) {
+      // Rotate tail
+      for (let i = pivotIdx; i < n; i++) result[i] = rotate[result[i]];
+    } else {
+      // Rotate head
+      for (let i = 0; i < pivotIdx; i++) result[i] = rotate[result[i]];
+    }
+
+    return result;
+  }
+
+  /**
+   * Pull move: reverses a short local segment (length 1–3) and flips
+   * all directions in it 180°. Simulates pulling a loop inward.
+   * Produces smaller structural changes than pivot — useful for
+   * fine-tuning near a good conformation.
+   */
+  private pullMove(dirs: Direction[]): Direction[] {
+    const result = dirs.slice();
+    const n = result.length;
+    if (n < 3) return result;
+
+    const start = Math.floor(Math.random() * (n - 2));
+    const len   = 1 + Math.floor(Math.random() * Math.min(3, n - start - 1));
+
+    const flip: Record<Direction, Direction> = { R: 'L', L: 'R', U: 'D', D: 'U', F: 'B', B: 'F' };
+    const segment = result.slice(start, start + len + 1).reverse().map(d => flip[d]);
+
+    for (let i = 0; i <= len; i++) result[start + i] = segment[i];
+
+    return result;
+  }
+
+  /**
+   * Single flip: changes one randomly chosen direction to another.
+   * Kept as a minority move (10%) for very fine local search near
+   * the end of the cooling schedule when T is almost 0.
+   */
+  private singleFlip(dirs: Direction[]): Direction[] {
+    const result  = dirs.slice();
+    const idx     = Math.floor(Math.random() * result.length);
+    const current = result[idx];
+    const choices = this.possibleDirections.filter(d => d !== current);
+    result[idx]   = choices[Math.floor(Math.random() * choices.length)];
+    return result;
   }
 
   /**
@@ -196,28 +284,28 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   /**
    * Actualizează temperatura conform programului de răcire exponențial
    * 
-   * FORMULA: T(t) = T_initial * (T_final / T_initial)^(t / t_max)
+   * FORMULA: T(t) = T_initial * (T_final / T_initial)^((t / t_max)^2)
    * 
-   * Aceasta oferă o răcire lentă care permite explorarea adecvată:
-   * - La început: temperatura scade încet (explorăm mult)
-   * - La sfârșit: temperatura scade rapid (convergem la soluție)
+   * The squared exponent keeps temperature high longer for exploration:
+   * - At 50% iterations: T ≈ 15% of initial
+   * - At 25% iterations: T ≈ 56% of initial
+   * - Avoids freezing halfway through
    * 
    * @param currentTemperature - Temperatura curentă (nu este folosită în această formulă)
    * @param iteration - Iterația curentă
    * @returns number - Noua temperatură
    */
   private updateTemperature(currentTemperature: number, iteration: number): number {
-    // Calculăm factorul de răcire bazat pe progresul în algoritm
-    // (T_final / T_initial)^(iteration / maxIterations)
+    const progress = iteration / this.maxIterations;
+    const exponent = progress * progress;
+
     const coolingFactor = Math.pow(
       this.finalTemperature / this.initialTemperature,
-      iteration / this.maxIterations
+      exponent
     );
 
-    // Noua temperatură = T_initial * factorul de răcire
     const newTemperature = this.initialTemperature * coolingFactor;
 
-    // Ne asigurăm că temperatura nu scade sub valoarea finală minimă
     return Math.max(newTemperature, this.finalTemperature);
   }
 

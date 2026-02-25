@@ -118,6 +118,7 @@ class ProteinFoldingWorker {
         initialTemperature: parameters.initialTemperature || 5.0,
         finalTemperature: parameters.finalTemperature || 0.01,
         coolingRate: parameters.coolingRate || 0.95,
+        stagnationWindow: parameters.stagnationWindow,
         initialDirections: parameters.initialDirections,
         onProgress: (progress) => {
           job.progress(progress.progress || 0);
