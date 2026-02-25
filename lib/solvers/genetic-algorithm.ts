@@ -13,10 +13,11 @@ import { EnergyCalculator } from "./energy-calculator";
  * - collisions: numărul de auto-intersecții
  */
 type Individual = {
-  directions: Direction[];  // Cromozomul - secvența de direcții
-  hpEnergy: number;         // Energia HP pură (fără penalizări) - pentru raportare
-  energy: number;           // Fitness combinat cu penalizări - pentru selecție internă
-  collisions: number;       // Numărul de coliziuni (0 = valid, >0 = invalid)
+  directions: Direction[];  // kept for output and repair compatibility
+  encoded:    Uint8Array;   // fast copy/mutate in hot loops
+  hpEnergy:   number;
+  energy:     number;
+  collisions: number;
 };
 
 /**
@@ -68,12 +69,10 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     let best = this.getBestIndividual();
     energyHistory.push({ iteration: 0, energy: best.hpEnergy });
 
-    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
-    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
-
     // BUCLA PRINCIPALĂ
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
+      if (this.hasReachedTarget(best.hpEnergy)) break;
 
       // PASUL 2: ELITISM
       const nextPopulation: Individual[] = this.getElites(this.eliteCount);
@@ -115,7 +114,7 @@ export class GeneticAlgorithmSolver extends BaseSolver {
         best = currentBest;
       }
 
-      if (iteration % logInterval === 0) {
+      if (iteration % this.logInterval === 0) {
         energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
@@ -125,8 +124,8 @@ export class GeneticAlgorithmSolver extends BaseSolver {
         });
       }
 
-      if (iteration % yieldInterval === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+      if (iteration % this.yieldInterval === 0) {
+        await this.yieldToFrame();
       }
     }
 
@@ -155,25 +154,31 @@ export class GeneticAlgorithmSolver extends BaseSolver {
    *  Separă hpEnergy (pură, pentru raportare) de energy (cu penalizări, pentru selecție)
    */
   private evaluateIndividual(directions: Direction[]): Individual {
-    const positions  = EnergyCalculator.calculatePositions(this.sequence, directions);
-    const collisions = EnergyCalculator.countCollisions(positions);
-    const hpEnergy   = EnergyCalculator.calculateContactEnergy(this.sequence, positions);
-
-    // PENALTY_WEIGHT = 100 — same as all other algorithms
-    const PENALTY_WEIGHT = 100;
-    const energy = hpEnergy + collisions * PENALTY_WEIGHT;
-
-    return { directions, hpEnergy, energy, collisions };
+    EnergyCalculator.calculatePositionsInto(
+      this.sequence, directions, this.positionBuffer
+    );
+    const collisions = EnergyCalculator.countCollisionsInBuffer(
+      this.positionBuffer, this.sequence.length
+    );
+    const hpEnergy = EnergyCalculator.calculateContactEnergyFromBuffer(
+      this.sequence, this.positionBuffer
+    );
+    const energy  = hpEnergy + collisions * 100;
+    const encoded = this.encodeDirections(directions);
+    return { directions, encoded, hpEnergy, energy, collisions };
   }
 
   /**
-   * Inițializează populația cu indivizi evaluați complet
+   * Inițializează populația — 20% greedy, 80% random SAW
    */
   private initializePopulation(): Individual[] {
     const individuals: Individual[] = [];
+    const greedyCount = Math.max(1, Math.floor(this.populationSize * 0.2));
 
     for (let i = 0; i < this.populationSize; i++) {
-      const directions = this.generateInitialDirections();
+      const directions = i < greedyCount
+        ? this.generateGreedyDirections()
+        : this.generateInitialDirections();
       individuals.push(this.evaluateIndividual(directions));
     }
 
@@ -330,22 +335,22 @@ export class GeneticAlgorithmSolver extends BaseSolver {
   }
 
   /**
-   * MUTAȚIE - Modifică aleatoriu genele unui cromozom
-   * Fiecare genă are probabilitate mutationRate de a fi schimbată cu o altă direcție
+   * MUTAȚIE - Uses Uint8Array for fast internal processing
    */
   private mutate(genes: Direction[]): Direction[] {
-    const dirs: Direction[] = genes.slice();
-    const alphabet: Direction[] = this.possibleDirections;
+    const buf    = this.encodeDirections(genes);
+    const maxDir = this.possibleDirections.length;
 
-    for (let i = 0; i < dirs.length; i++) {
+    for (let i = 0; i < buf.length; i++) {
       if (Math.random() < this.mutationRate) {
-        const current = dirs[i];
-        const choices = alphabet.filter(d => d !== current);
-        dirs[i] = choices[Math.floor(Math.random() * choices.length)];
+        const current = buf[i];
+        let newVal = Math.floor(Math.random() * (maxDir - 1));
+        if (newVal >= current) newVal++;
+        buf[i] = newVal;
       }
     }
 
-    return dirs;
+    return this.decodeDirections(buf);
   }
 
   /**
@@ -366,11 +371,11 @@ export class GeneticAlgorithmSolver extends BaseSolver {
     const positions = EnergyCalculator.calculatePositions(this.sequence, directions);
     if (EnergyCalculator.countCollisions(positions) === 0) return directions;
 
-    // Find first collision index
-    const occupied = new Set<string>();
+    // Find first collision index (integer-packed keys for performance)
+    const occupied = new Set<number>();
     let collisionIndex = -1;
     for (let i = 0; i < positions.length; i++) {
-      const key = `${positions[i].x},${positions[i].y},${positions[i].z}`;
+      const key = ((positions[i].z + 512) << 20) | ((positions[i].y + 512) << 10) | (positions[i].x + 512);
       if (occupied.has(key)) { collisionIndex = i; break; }
       occupied.add(key);
     }

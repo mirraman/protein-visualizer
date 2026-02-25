@@ -172,31 +172,102 @@ export class EnergyCalculator {
   }
 
   /**
-   * Verifică dacă conformația are auto-intersecție
-   * Auto-intersecție = doi aminoacizi ocupă aceeași poziție în spațiu
-   *
-   * ALGORITM:
-   * - Parcurgem toate pozițiile
-   * - Pentru fiecare poziție, verificăm dacă a mai fost ocupată
-   * - Folosim un Set pentru căutare rapidă O(1)
-   *
-   * @param positions - Array cu pozițiile aminoacizilor
-   * @returns boolean - true dacă există auto-intersecție (INVALID)
+   * Writes positions into a pre-allocated Float64Array buffer.
+   * Layout: [x0, y0, z0, x1, y1, z1, ..., xN, yN, zN]
    */
+  static calculatePositionsInto(
+    sequence: string,
+    directions: Direction[],
+    buffer: Float64Array
+  ): void {
+    buffer[0] = 0; buffer[1] = 0; buffer[2] = 0;
+
+    for (let i = 1; i < sequence.length; i++) {
+      const base = i * 3;
+      const prev = base - 3;
+      const dir  = directions[i - 1];
+
+      buffer[base]     = buffer[prev];
+      buffer[base + 1] = buffer[prev + 1];
+      buffer[base + 2] = buffer[prev + 2];
+
+      if      (dir === 'R') buffer[base]++;
+      else if (dir === 'L') buffer[base]--;
+      else if (dir === 'U') buffer[base + 1]++;
+      else if (dir === 'D') buffer[base + 1]--;
+      else if (dir === 'F') buffer[base + 2]++;
+      else if (dir === 'B') buffer[base + 2]--;
+    }
+  }
+
+  /**
+   * Counts collisions using a pre-filled position buffer — no Position[] allocation.
+   */
+  static countCollisionsInBuffer(buffer: Float64Array, length: number): number {
+    const occupied = new Set<number>();
+    let collisions = 0;
+
+    for (let i = 0; i < length; i++) {
+      const b   = i * 3;
+      const key = this.positionKey(buffer[b], buffer[b + 1], buffer[b + 2]);
+      if (occupied.has(key)) collisions++;
+      else occupied.add(key);
+    }
+    return collisions;
+  }
+
+  /**
+   * Calculates HP contact energy using a pre-filled position buffer.
+   */
+  static calculateContactEnergyFromBuffer(
+    sequence: string,
+    buffer: Float64Array
+  ): number {
+    let energy = 0;
+    const n = sequence.length;
+
+    for (let i = 0; i < n; i++) {
+      if (sequence[i] !== 'H') continue;
+      const bi = i * 3;
+
+      for (let j = i + 2; j < n; j++) {
+        if (sequence[j] !== 'H') continue;
+        const bj = j * 3;
+
+        const dx = Math.abs(buffer[bi]     - buffer[bj]);
+        const dy = Math.abs(buffer[bi + 1] - buffer[bj + 1]);
+        const dz = Math.abs(buffer[bi + 2] - buffer[bj + 2]);
+
+        if (dx + dy + dz === 1) energy--;
+      }
+    }
+    return energy;
+  }
+
+  /**
+   * Packs a 3D grid position into a single integer key for O(1) Set lookup.
+   * Assumes coordinates are in range [-512, 511] (10 bits each) which is
+   * more than enough for any realistic HP sequence length.
+   * This eliminates string allocation in the hot collision-detection loop.
+   */
+  private static positionKey(x: number, y: number, z: number): number {
+    return ((z + 512) << 20) | ((y + 512) << 10) | (x + 512);
+  }
+
   /**
    * Returns the number of collisions (self-intersections).
    * 0 means valid. >0 means invalid.
    */
   static countCollisions(positions: Position[]): number {
-    const occupied = new Set<string>();
+    const occupied = new Set<number>();
     let collisionCount = 0;
 
     for (const pos of positions) {
-      const posKey = `${pos.x},${pos.y},${pos.z}`;
-      if (occupied.has(posKey)) {
+      const key = this.positionKey(pos.x, pos.y, pos.z);
+      if (occupied.has(key)) {
         collisionCount++;
       } else {
-        occupied.add(posKey);
+        occupied.add(key);
       }
     }
     return collisionCount;

@@ -53,16 +53,10 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     // Salvăm energia inițială în istoric
     energyHistory.push({ iteration: 0, energy: bestHpEnergy });
 
-    // Calculăm intervalele pentru logare și actualizare UI
-    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
-    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
-
     // PASUL 3: BUCLA PRINCIPALĂ - Optimizare Simulated Annealing
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
-      // Verificăm dacă s-a cerut oprirea
-      if (this.isStopped) {
-        break;
-      }
+      if (this.isStopped) break;
+      if (this.hasReachedTarget(bestHpEnergy)) break;
 
       // PASUL 4: Generăm o conformație vecină (o mică modificare)
       const currentConformation = { directions: currentDirections, fitness: currentFitness };
@@ -88,7 +82,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       temperature = this.updateTemperature(temperature, iteration);
 
       // PASUL 7: Înregistrăm statistici la intervale regulate
-      if (iteration % logInterval === 0) {
+      if (iteration % this.logInterval === 0) {
         energyHistory.push({
           iteration,
           energy: bestHpEnergy  // Salvăm cea mai bună hpEnergy găsită
@@ -103,9 +97,8 @@ export class SimulatedAnnealingSolver extends BaseSolver {
         });
       }
 
-      // Cedăm controlul browser-ului periodic
-      if (iteration % yieldInterval === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+      if (iteration % this.yieldInterval === 0) {
+        await this.yieldToFrame();
       }
 
       // TERMINARE TIMPURIE: dacă temperatura a scăzut sub pragul minim

@@ -178,13 +178,10 @@ export class GeneticProgrammingSolver extends BaseSolver {
     let best = this.evaluatePopulationAndGetBest();
     energyHistory.push({ iteration: 0, energy: best.energy });
 
-    // Intervalele pentru logging
-    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
-    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
-
     // BUCLA PRINCIPALĂ - Evoluție
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
+      if (this.hasReachedTarget(best.energy)) break;
 
       // PASUL 2: ELITISM - Păstrăm cele mai bune programe
       const next: Program[] = this.getElitesPrograms(this.eliteCount);
@@ -227,7 +224,7 @@ export class GeneticProgrammingSolver extends BaseSolver {
       }
 
       // Logging și UI
-      if (iteration % logInterval === 0) {
+      if (iteration % this.logInterval === 0) {
         energyHistory.push({ iteration, energy: best.energy });
         this.onProgress?.({
           iteration,
@@ -237,8 +234,8 @@ export class GeneticProgrammingSolver extends BaseSolver {
         });
       }
 
-      if (iteration % yieldInterval === 0) {
-        await new Promise(r => setTimeout(r, 0));
+      if (iteration % this.yieldInterval === 0) {
+        await this.yieldToFrame();
       }
     }
 
@@ -259,15 +256,17 @@ export class GeneticProgrammingSolver extends BaseSolver {
   }
 
   /**
-   * Inițializează populația cu programe aleatorii
+   * Inițializează populația — 20% greedy, 80% random
    */
   private initializePopulation(): Program[] {
     const arr: Program[] = [];
-    // Lungimea programului = numărul de direcții necesar
     const length = this.sequence.length - 1;
+    const greedyCount = Math.max(1, Math.floor(this.populationSize * 0.2));
 
     for (let i = 0; i < this.populationSize; i++) {
-      arr.push(createRandomProgram(length, this.possibleDirections));
+      arr.push(i < greedyCount
+        ? { directions: this.generateGreedyDirections() }
+        : createRandomProgram(length, this.possibleDirections));
     }
 
     return arr;

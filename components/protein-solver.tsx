@@ -178,6 +178,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
       maxIterations: iterations[0],
       initialDirections,
       latticeType,
+      ...(sequence === 'HPHPPHHPHPPHPHHPPHPH' && { targetEnergy: -9 }),
     };
 
     const params =

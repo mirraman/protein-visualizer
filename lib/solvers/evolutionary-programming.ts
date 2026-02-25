@@ -7,8 +7,9 @@ import type { Direction } from "../types";
  */
 type Individual = {
   directions: Direction[];
-  hpEnergy: number;   // HP pură — pentru raportare
-  energy: number;     // Fitness (HP + penalty) — pentru selecție
+  encoded:    Uint8Array;
+  hpEnergy:   number;
+  energy:     number;
 };
 
 /**
@@ -55,13 +56,10 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
     let best = this.getBest();
     energyHistory.push({ iteration: 0, energy: best.hpEnergy });
 
-    // Intervalele pentru logging
-    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
-    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
-
     // BUCLA PRINCIPALĂ - Evoluție
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
       if (this.isStopped) break;
+      if (this.hasReachedTarget(best.hpEnergy)) break;
 
       // PASUL 2: ELITISM - Copiem cei mai buni indivizi direct
       const next: Individual[] = this.getElites(this.eliteCount);
@@ -74,11 +72,21 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
         // MUTAȚIE: Creăm un copil prin mutația părintelui
         const childDirs = this.mutate(parent.directions);
 
-        // EVALUARE: Calculăm fitness și hpEnergy
+        // EVALUARE: buffer-based for performance
+        EnergyCalculator.calculatePositionsInto(
+          this.sequence, childDirs, this.positionBuffer
+        );
+        const collisions = EnergyCalculator.countCollisionsInBuffer(
+          this.positionBuffer, this.sequence.length
+        );
+        const hpEnergy = EnergyCalculator.calculateContactEnergyFromBuffer(
+          this.sequence, this.positionBuffer
+        );
         const child: Individual = {
           directions: childDirs,
-          hpEnergy: EnergyCalculator.calculateHPEnergy(this.sequence, childDirs),
-          energy:   EnergyCalculator.calculateFitness(this.sequence, childDirs, 100),
+          encoded:    this.encodeDirections(childDirs),
+          hpEnergy,
+          energy:     hpEnergy + collisions * 100,
         };
 
         // Adăugăm copilul în noua generație
@@ -97,7 +105,7 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
       }
 
       // Logging și UI — folosim hpEnergy pentru raportare
-      if (iteration % logInterval === 0) {
+      if (iteration % this.logInterval === 0) {
         energyHistory.push({ iteration, energy: best.hpEnergy });
         this.onProgress?.({
           iteration,
@@ -107,8 +115,8 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
         });
       }
 
-      if (iteration % yieldInterval === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+      if (iteration % this.yieldInterval === 0) {
+        await this.yieldToFrame();
       }
     }
 
@@ -130,17 +138,30 @@ export class EvolutionaryProgrammingSolver extends BaseSolver {
   }
 
   /**
-   * Inițializează populația cu indivizi aleatorii
+   * Inițializează populația — 20% greedy, 80% random SAW
    */
   private initializePopulation(): Individual[] {
     const arr: Individual[] = [];
+    const greedyCount = Math.max(1, Math.floor(this.populationSize * 0.2));
 
     for (let i = 0; i < this.populationSize; i++) {
-      const d = this.generateRandomDirections();
+      const d = i < greedyCount
+        ? this.generateGreedyDirections()
+        : this.generateRandomDirections();
+      EnergyCalculator.calculatePositionsInto(
+        this.sequence, d, this.positionBuffer
+      );
+      const collisions = EnergyCalculator.countCollisionsInBuffer(
+        this.positionBuffer, this.sequence.length
+      );
+      const hpEnergy = EnergyCalculator.calculateContactEnergyFromBuffer(
+        this.sequence, this.positionBuffer
+      );
       arr.push({
         directions: d,
-        hpEnergy: EnergyCalculator.calculateHPEnergy(this.sequence, d),
-        energy:   EnergyCalculator.calculateFitness(this.sequence, d, 100),
+        encoded:    this.encodeDirections(d),
+        hpEnergy,
+        energy:     hpEnergy + collisions * 100,
       });
     }
 

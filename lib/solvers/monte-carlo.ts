@@ -52,19 +52,11 @@ export class MonteCarloSolver extends BaseSolver {
     // Salvăm energia inițială în istoric (iterația 0) — bestConformation.energy = hpEnergy
     energyHistory.push({ iteration: 0, energy: bestConformation.energy });
 
-    // Calculăm intervalele pentru logare și pentru a permite UI-ului să se actualizeze
-    // logInterval: la câte iterații salvăm în istoric (max ~2000 intrări în istoric)
-    const logInterval = Math.max(1, Math.floor(this.maxIterations / 2000));
-    // yieldInterval: la câte iterații cedăm controlul browser-ului (max ~1000 cedări)
-    const yieldInterval = Math.max(1, Math.floor(this.maxIterations / 1000));
-
     // PASUL 2: BUCLA PRINCIPALĂ - Eșantionare Monte Carlo
     // Iterăm de la 1 până la numărul maxim de iterații
     for (let iteration = 1; iteration <= this.maxIterations; iteration++) {
-      // Verificăm dacă utilizatorul a oprit execuția
-      if (this.isStopped) {
-        break; // Ieșim din buclă dacă s-a cerut oprirea
-      }
+      if (this.isStopped) break;
+      if (this.hasReachedTarget(bestConformation.energy)) break;
 
       // PASUL 3: Generăm noi eșantioane prin eșantionare aleatoare
       this.performSamplingIteration();
@@ -77,7 +69,7 @@ export class MonteCarloSolver extends BaseSolver {
       }
 
       // PASUL 5: Înregistrăm statistici la intervale regulate
-      if (iteration % logInterval === 0) {
+      if (iteration % this.logInterval === 0) {
         // FIX: log best hpEnergy found so far, not population average
         energyHistory.push({
           iteration,
@@ -92,9 +84,8 @@ export class MonteCarloSolver extends BaseSolver {
         });
       }
 
-      // Cedăm controlul browser-ului periodic pentru a nu bloca UI-ul
-      if (iteration % yieldInterval === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
+      if (iteration % this.yieldInterval === 0) {
+        await this.yieldToFrame();
       }
     }
 
