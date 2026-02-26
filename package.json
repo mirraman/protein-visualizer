@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "benchmark": "ts-node --transpile-only -P tsconfig.scripts.json scripts/run-benchmark.ts"
+    "benchmark": "ts-node --transpile-only -P tsconfig.scripts.json scripts/run-benchmark.ts",
+    "pipeline": "ts-node --transpile-only -P tsconfig.scripts.json scripts/compose-pipeline.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rds-data": "latest",
@@ -107,6 +108,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^0.1.95",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
