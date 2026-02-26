@@ -13,16 +13,50 @@ export async function exportDomToPng(
 	filename: string,
 	scale = 3,
 ): Promise<void> {
-	const dataUrl = await toPng(element, {
-		pixelRatio: scale,
-		backgroundColor: "#ffffff",
-		filter: (node: HTMLElement) => {
-			// Hide elements marked with data-export-exclude (e.g. download buttons)
-			return !node?.dataset?.exportExclude;
-		},
-	});
+	// Temporarily expand any scroll-constrained ancestors so the full
+	// content is visible to html-to-image (e.g. max-h-[500px] overflow-y-auto).
+	const saved: { el: HTMLElement; maxHeight: string; overflow: string; overflowY: string }[] = [];
+	let ancestor: HTMLElement | null = element;
+	while (ancestor) {
+		const style = ancestor.style;
+		const computed = getComputedStyle(ancestor);
+		if (
+			computed.overflow !== "visible" ||
+			computed.overflowY !== "visible" ||
+			(computed.maxHeight && computed.maxHeight !== "none")
+		) {
+			saved.push({
+				el: ancestor,
+				maxHeight: style.maxHeight,
+				overflow: style.overflow,
+				overflowY: style.overflowY,
+			});
+			style.maxHeight = "none";
+			style.overflow = "visible";
+			style.overflowY = "visible";
+		}
+		ancestor = ancestor.parentElement;
+	}
 
-	triggerDownload(dataUrl, `${filename}.png`);
+	try {
+		const dataUrl = await toPng(element, {
+			pixelRatio: scale,
+			backgroundColor: "#ffffff",
+			filter: (node: HTMLElement) => {
+				// Hide elements marked with data-export-exclude (e.g. download buttons)
+				return !node?.dataset?.exportExclude;
+			},
+		});
+
+		triggerDownload(dataUrl, `${filename}.png`);
+	} finally {
+		// Restore original scroll constraints
+		for (const { el, maxHeight, overflow, overflowY } of saved) {
+			el.style.maxHeight = maxHeight;
+			el.style.overflow = overflow;
+			el.style.overflowY = overflowY;
+		}
+	}
 }
 
 /**

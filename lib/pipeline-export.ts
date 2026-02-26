@@ -1,120 +1,94 @@
 /**
- * Compose multiple exported section images into a single pipeline diagram.
+ * Compose multiple exported section images into a single pipeline diagram
+ * optimised for inclusion in a **scientific article / journal figure**.
  *
- * The pipeline has two rows:
- *   Row 1:  [A] Config  →  [B] 3D Visualization  →  [C] Results
- *   Row 2:          [D] Connection Details (centered, full width)
+ * Layout (2 × 2 grid with flow arrows):
  *
- * Each section has a circled step letter and a connecting arrow.
- * A single "Export Pipeline" button captures all 4 refs and builds
- * this diagram entirely on a client-side <canvas>.
+ *   (a) Solver Configuration  ──→  (b) 3D Visualization
+ *            │                              │
+ *            ↓                              ↓
+ *   (c) Energy Evolution      ←──  (d) Connection Details
+ *
+ * The figure targets ~2000 px wide which maps to a comfortable single-
+ * or two-column figure at 300 DPI (≈17 cm / 6.7 in).
  */
 
-const PADDING = 40;
-const GAP = 60; // horizontal gap between cards
-const ROW_GAP = 60; // vertical gap between rows
-const STEP_RADIUS = 22;
-const ARROW_LENGTH = GAP; // arrow sits inside the gap
-const LABEL_FONT = "bold 18px Inter, system-ui, sans-serif";
-const TITLE_FONT = "bold 24px Inter, system-ui, sans-serif";
+const PADDING = 48;
+const GAP = 56; // gap between cells (contains arrows)
+const LABEL_FONT = "bold 13px 'Times New Roman', 'Noto Serif', Georgia, serif";
+const TITLE_FONT = "bold 16px 'Times New Roman', 'Noto Serif', Georgia, serif";
+const CAPTION_FONT = "italic 12px 'Times New Roman', 'Noto Serif', Georgia, serif";
 
 interface PipelineOptions {
 	title?: string;
 	filename?: string;
 	backgroundColor?: string;
+	caption?: string;
 }
 
-/**
- * Draw a single step label (circled letter + text) above an image on the
- * compositing canvas.
- */
-function drawStepLabel(
-	ctx: CanvasRenderingContext2D,
-	letter: string,
-	label: string,
-	cx: number,
-	cy: number,
-) {
-	// Circled letter
-	ctx.beginPath();
-	ctx.arc(cx, cy, STEP_RADIUS, 0, Math.PI * 2);
-	ctx.fillStyle = "#3b82f6";
-	ctx.fill();
-	ctx.fillStyle = "#ffffff";
-	ctx.font = "bold 16px Inter, system-ui, sans-serif";
-	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	ctx.fillText(letter, cx, cy);
+// ─── Drawing helpers ─────────────────────────────────────────────────
 
-	// Label text to the right of the circle
-	ctx.fillStyle = "#374151";
+function drawSubLabel(
+	ctx: CanvasRenderingContext2D,
+	label: string,
+	x: number,
+	y: number,
+) {
+	ctx.fillStyle = "#111827";
 	ctx.font = LABEL_FONT;
 	ctx.textAlign = "left";
-	ctx.textBaseline = "middle";
-	ctx.fillText(label, cx + STEP_RADIUS + 10, cy);
+	ctx.textBaseline = "top";
+	ctx.fillText(label, x, y);
 }
 
-/**
- * Draw a right-pointing arrow between two cards.
- */
-function drawArrow(
+function drawHorizArrow(
 	ctx: CanvasRenderingContext2D,
-	fromX: number,
+	x1: number,
 	y: number,
-	length: number,
+	x2: number,
 ) {
-	const headLen = 12;
-	const toX = fromX + length;
-
-	ctx.strokeStyle = "#6b7280";
-	ctx.lineWidth = 2.5;
+	const head = 10;
+	ctx.strokeStyle = "#374151";
+	ctx.lineWidth = 2;
+	ctx.setLineDash([]);
 	ctx.beginPath();
-	ctx.moveTo(fromX, y);
-	ctx.lineTo(toX, y);
+	ctx.moveTo(x1, y);
+	ctx.lineTo(x2, y);
 	ctx.stroke();
-
-	// Arrowhead
-	ctx.fillStyle = "#6b7280";
+	ctx.fillStyle = "#374151";
 	ctx.beginPath();
-	ctx.moveTo(toX, y);
-	ctx.lineTo(toX - headLen, y - headLen / 2);
-	ctx.lineTo(toX - headLen, y + headLen / 2);
+	ctx.moveTo(x2, y);
+	ctx.lineTo(x2 - head, y - head / 2);
+	ctx.lineTo(x2 - head, y + head / 2);
 	ctx.closePath();
 	ctx.fill();
 }
 
-/**
- * Draw a down-pointing arrow from the top row to the bottom row.
- */
-function drawDownArrow(
+function drawVertArrow(
 	ctx: CanvasRenderingContext2D,
 	x: number,
-	fromY: number,
-	length: number,
+	y1: number,
+	y2: number,
 ) {
-	const headLen = 12;
-	const toY = fromY + length;
-
-	ctx.strokeStyle = "#6b7280";
-	ctx.lineWidth = 2.5;
+	const head = 10;
+	ctx.strokeStyle = "#374151";
+	ctx.lineWidth = 2;
+	ctx.setLineDash([]);
 	ctx.beginPath();
-	ctx.moveTo(x, fromY);
-	ctx.lineTo(x, toY);
+	ctx.moveTo(x, y1);
+	ctx.lineTo(x, y2);
 	ctx.stroke();
-
-	// Arrowhead
-	ctx.fillStyle = "#6b7280";
+	ctx.fillStyle = "#374151";
 	ctx.beginPath();
-	ctx.moveTo(x, toY);
-	ctx.lineTo(x - headLen / 2, toY - headLen);
-	ctx.lineTo(x + headLen / 2, toY - headLen);
+	ctx.moveTo(x, y2);
+	ctx.lineTo(x - head / 2, y2 - head);
+	ctx.lineTo(x + head / 2, y2 - head);
 	ctx.closePath();
 	ctx.fill();
 }
 
-/**
- * Load an <img> from a data URL or blob URL.
- */
+// ─── Image loading ──────────────────────────────────────────────────
+
 function loadImage(src: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
 		const img = new Image();
@@ -124,44 +98,57 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 	});
 }
 
-/**
- * Capture a DOM element as a data-URL using html-to-image,
- * then return it as an HTMLImageElement with its natural dimensions.
- */
+/** Expand scroll/overflow constraints, capture, restore. */
 async function captureElement(
 	element: HTMLElement,
 ): Promise<{ img: HTMLImageElement; w: number; h: number }> {
-	const { toPng } = await import("html-to-image");
-	const dataUrl = await toPng(element, {
-		pixelRatio: 2,
-		backgroundColor: "#ffffff",
-		filter: (node: HTMLElement) => !node?.dataset?.exportExclude,
-	});
-	const img = await loadImage(dataUrl);
-	return { img, w: img.naturalWidth, h: img.naturalHeight };
+	const saved: { el: HTMLElement; mh: string; ov: string; ovy: string }[] = [];
+	let anc: HTMLElement | null = element;
+	while (anc) {
+		const s = anc.style;
+		const c = getComputedStyle(anc);
+		if (
+			c.overflow !== "visible" ||
+			c.overflowY !== "visible" ||
+			(c.maxHeight && c.maxHeight !== "none")
+		) {
+			saved.push({ el: anc, mh: s.maxHeight, ov: s.overflow, ovy: s.overflowY });
+			s.maxHeight = "none";
+			s.overflow = "visible";
+			s.overflowY = "visible";
+		}
+		anc = anc.parentElement;
+	}
+	try {
+		const { toPng } = await import("html-to-image");
+		const dataUrl = await toPng(element, {
+			pixelRatio: 2,
+			backgroundColor: "#ffffff",
+			filter: (node: HTMLElement) => !node?.dataset?.exportExclude,
+		});
+		const img = await loadImage(dataUrl);
+		return { img, w: img.naturalWidth, h: img.naturalHeight };
+	} finally {
+		for (const { el, mh, ov, ovy } of saved) {
+			el.style.maxHeight = mh;
+			el.style.overflow = ov;
+			el.style.overflowY = ovy;
+		}
+	}
 }
 
-/**
- * Capture the Three.js canvas at high resolution and return as image.
- */
 async function captureCanvas(
 	gl: any,
 	scene: any,
 	camera: any,
 	multiplier = 2,
 ): Promise<{ img: HTMLImageElement; w: number; h: number }> {
-	const w = gl.domElement.width;
-	const h = gl.domElement.height;
-	const tw = w * multiplier;
-	const th = h * multiplier;
-
 	const prevW = gl.domElement.width;
 	const prevH = gl.domElement.height;
 	const prevSW = gl.domElement.style.width;
 	const prevSH = gl.domElement.style.height;
-
 	try {
-		gl.setSize(tw, th, false);
+		gl.setSize(prevW * multiplier, prevH * multiplier, false);
 		gl.render(scene, camera);
 		const dataUrl = gl.domElement.toDataURL("image/png");
 		const img = await loadImage(dataUrl);
@@ -174,16 +161,8 @@ async function captureCanvas(
 	}
 }
 
-/**
- * Main export function – captures all 4 sections and composes them
- * into a single pipeline PNG.
- *
- * @param configRef   Ref to the Solver Configuration card (HTMLDivElement)
- * @param canvasRef   Ref exposing { gl, scene, camera } from Three.js
- * @param resultsRef  Ref to the Results card (HTMLDivElement)
- * @param connectionRef Ref to the Connection Details card (HTMLDivElement)
- * @param options     Optional title, filename, background colour
- */
+// ─── Main export ────────────────────────────────────────────────────
+
 export async function exportPipelineImage(
 	configRef: HTMLElement | null,
 	canvasRef: { gl: any; scene: any; camera: any } | null,
@@ -192,9 +171,10 @@ export async function exportPipelineImage(
 	options: PipelineOptions = {},
 ): Promise<void> {
 	const {
-		title = "Protein Folding Solver Pipeline",
+		title = "Fig. 1. Protein Folding Solver Pipeline",
 		filename = "protein-visualizer-pipeline",
-		backgroundColor = "#f9fafb",
+		backgroundColor = "#ffffff",
+		caption,
 	} = options;
 
 	if (!configRef || !canvasRef || !resultsRef || !connectionRef) {
@@ -202,7 +182,7 @@ export async function exportPipelineImage(
 		return;
 	}
 
-	// 1. Capture all four sections in parallel
+	// 1. Capture all four sections
 	const [config, vis, results, connection] = await Promise.all([
 		captureElement(configRef),
 		captureCanvas(canvasRef.gl, canvasRef.scene, canvasRef.camera),
@@ -210,101 +190,108 @@ export async function exportPipelineImage(
 		captureElement(connectionRef),
 	]);
 
-	// 2. Normalize heights for the top row – scale to the tallest card
-	const LABEL_HEIGHT = 50; // space for step label above each card
-	const topTargetH = Math.max(config.h, vis.h, results.h);
+	// 2. Compute grid cell sizes
+	//    Each cell is half the usable width minus the gap.
+	const LABEL_H = 24; // height for "(a) ..." label
+	const TARGET_W = 2000; // total figure width in px
+	const usableW = TARGET_W - PADDING * 2 - GAP;
+	const cellW = usableW / 2; // each cell is half
 
-	function scaleToH(
-		item: { img: HTMLImageElement; w: number; h: number },
-		targetH: number,
-	) {
-		const scale = targetH / item.h;
-		return { ...item, drawW: item.w * scale, drawH: targetH };
-	}
+	// Scale each image to fit cellW, preserving aspect ratio
+	const scaleToFit = (item: { w: number; h: number }) => {
+		const s = cellW / item.w;
+		return { drawW: cellW, drawH: item.h * s };
+	};
 
-	const cS = scaleToH(config, topTargetH);
-	const vS = scaleToH(vis, topTargetH);
-	const rS = scaleToH(results, topTargetH);
+	const aSize = scaleToFit(config);
+	const bSize = scaleToFit(vis);
+	const cSize = scaleToFit(results);
+	const dSize = scaleToFit(connection);
 
-	// Top row total width (3 cards + 2 arrows)
-	const topRowW = cS.drawW + GAP + vS.drawW + GAP + rS.drawW;
+	// Row heights = max of the two cells in each row (+ label)
+	const row1H = Math.max(aSize.drawH, bSize.drawH);
+	const row2H = Math.max(cSize.drawH, dSize.drawH);
 
-	// Connection details – scale to fit full top-row width
-	const connScale = topRowW / connection.w;
-	const connDrawW = topRowW;
-	const connDrawH = connection.h * connScale;
+	// 3. Total canvas dimensions
+	const titleH = 40;
+	const captionH = caption ? 36 : 0;
+	const totalH =
+		PADDING + titleH +
+		LABEL_H + row1H + GAP +
+		LABEL_H + row2H +
+		captionH + PADDING;
 
-	// 3. Canvas dimensions
-	const canvasW = PADDING * 2 + topRowW;
-	const titleHeight = 60;
-	const topRowY = PADDING + titleHeight + LABEL_HEIGHT;
-	const arrowDownLen = ROW_GAP - 10;
-	const bottomRowY =
-		topRowY + topTargetH + arrowDownLen + LABEL_HEIGHT;
-	const canvasH = bottomRowY + connDrawH + PADDING;
-
-	// 4. Create canvas
 	const canvas = document.createElement("canvas");
-	canvas.width = canvasW;
-	canvas.height = canvasH;
+	canvas.width = TARGET_W;
+	canvas.height = totalH;
 	const ctx = canvas.getContext("2d")!;
 
 	// Background
 	ctx.fillStyle = backgroundColor;
-	ctx.fillRect(0, 0, canvasW, canvasH);
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-	// Title
+	// 4. Title (top, centered, bold serif)
 	ctx.fillStyle = "#111827";
 	ctx.font = TITLE_FONT;
 	ctx.textAlign = "center";
-	ctx.textBaseline = "middle";
-	ctx.fillText(title, canvasW / 2, PADDING + titleHeight / 2);
+	ctx.textBaseline = "top";
+	ctx.fillText(title, TARGET_W / 2, PADDING);
 
-	// 5. Draw top row
-	const x1 = PADDING;
-	const x2 = x1 + cS.drawW + GAP;
-	const x3 = x2 + vS.drawW + GAP;
+	// Coordinates for the 2×2 grid
+	const x1 = PADDING; // left column
+	const x2 = PADDING + cellW + GAP; // right column
+	const y1 = PADDING + titleH; // top row (label starts here)
+	const y2 = y1 + LABEL_H + row1H + GAP; // bottom row
 
-	// Step labels
-	drawStepLabel(ctx, "A", "Solver Configuration", x1 + 10, topRowY - LABEL_HEIGHT / 2);
-	drawStepLabel(ctx, "B", "3D Visualization", x2 + 10, topRowY - LABEL_HEIGHT / 2);
-	drawStepLabel(ctx, "C", "Results", x3 + 10, topRowY - LABEL_HEIGHT / 2);
+	// 5. Draw labels and images
+	// (a) Solver Configuration — top-left
+	drawSubLabel(ctx, "(a) Solver Configuration", x1, y1);
+	ctx.drawImage(config.img, x1, y1 + LABEL_H, aSize.drawW, aSize.drawH);
+	ctx.strokeStyle = "#d1d5db";
+	ctx.lineWidth = 1;
+	ctx.strokeRect(x1, y1 + LABEL_H, aSize.drawW, aSize.drawH);
 
-	// Card images
-	ctx.drawImage(cS.img, x1, topRowY, cS.drawW, cS.drawH);
-	ctx.drawImage(vS.img, x2, topRowY, vS.drawW, vS.drawH);
-	ctx.drawImage(rS.img, x3, topRowY, rS.drawW, rS.drawH);
+	// (b) 3D Visualization — top-right
+	drawSubLabel(ctx, "(b) 3D Visualization", x2, y1);
+	ctx.drawImage(vis.img, x2, y1 + LABEL_H, bSize.drawW, bSize.drawH);
+	ctx.strokeStyle = "#d1d5db";
+	ctx.strokeRect(x2, y1 + LABEL_H, bSize.drawW, bSize.drawH);
 
-	// Card borders
-	ctx.strokeStyle = "#e5e7eb";
-	ctx.lineWidth = 2;
-	ctx.strokeRect(x1, topRowY, cS.drawW, cS.drawH);
-	ctx.strokeRect(x2, topRowY, vS.drawW, vS.drawH);
-	ctx.strokeRect(x3, topRowY, rS.drawW, rS.drawH);
+	// (c) Results — bottom-left
+	drawSubLabel(ctx, "(c) Energy Evolution", x1, y2);
+	ctx.drawImage(results.img, x1, y2 + LABEL_H, cSize.drawW, cSize.drawH);
+	ctx.strokeStyle = "#d1d5db";
+	ctx.strokeRect(x1, y2 + LABEL_H, cSize.drawW, cSize.drawH);
 
-	// Arrows between top cards
-	const arrowY1 = topRowY + topTargetH / 2;
-	drawArrow(ctx, x1 + cS.drawW, arrowY1, GAP);
-	drawArrow(ctx, x2 + vS.drawW, arrowY1, GAP);
+	// (d) Connection Details — bottom-right
+	drawSubLabel(ctx, "(d) Connection Details", x2, y2);
+	ctx.drawImage(connection.img, x2, y2 + LABEL_H, dSize.drawW, dSize.drawH);
+	ctx.strokeStyle = "#d1d5db";
+	ctx.strokeRect(x2, y2 + LABEL_H, dSize.drawW, dSize.drawH);
 
-	// Down arrow from results to connection table
-	const downArrowX = x1 + topRowW / 2;
-	drawDownArrow(ctx, downArrowX, topRowY + topTargetH, arrowDownLen);
+	// 6. Flow arrows
+	// (a) → (b)  horizontal arrow between top cells
+	const arrowY1 = y1 + LABEL_H + row1H / 2;
+	drawHorizArrow(ctx, x1 + cellW + 4, arrowY1, x2 - 4);
 
-	// 6. Draw bottom row
-	drawStepLabel(
-		ctx,
-		"D",
-		"Connection Details",
-		x1 + 10,
-		bottomRowY - LABEL_HEIGHT / 2,
-	);
-	ctx.drawImage(connection.img, x1, bottomRowY, connDrawW, connDrawH);
-	ctx.strokeStyle = "#e5e7eb";
-	ctx.lineWidth = 2;
-	ctx.strokeRect(x1, bottomRowY, connDrawW, connDrawH);
+	// (a) ↓ (c)  vertical arrow between left cells
+	const arrowX1 = x1 + cellW / 2;
+	drawVertArrow(ctx, arrowX1, y1 + LABEL_H + row1H + 4, y2 + LABEL_H - 4);
 
-	// 7. Download
+	// (b) ↓ (d)  vertical arrow between right cells
+	const arrowX2 = x2 + cellW / 2;
+	drawVertArrow(ctx, arrowX2, y1 + LABEL_H + row1H + 4, y2 + LABEL_H - 4);
+
+	// 7. Optional caption
+	if (caption) {
+		ctx.fillStyle = "#4b5563";
+		ctx.font = CAPTION_FONT;
+		ctx.textAlign = "center";
+		ctx.textBaseline = "bottom";
+		ctx.fillText(caption, TARGET_W / 2, totalH - PADDING / 2);
+	}
+
+	// 8. Download
 	const dataUrl = canvas.toDataURL("image/png");
 	const link = document.createElement("a");
 	link.download = `${filename}.png`;
