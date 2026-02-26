@@ -46,8 +46,8 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     let bestHpEnergy  = Infinity;
     let bestDirections: Direction[] = [];
 
-    // Current trajectory state — use greedy init 70% of the time for better starting point
-    const useGreedy = Math.random() < 0.7;
+    // Current trajectory state — 50% greedy (better start -5..-7) vs 50% random (diversity)
+    const useGreedy = Math.random() < 0.5;
     let currentDirections = useGreedy
       ? this.generateGreedyDirections()
       : this.generateRandomDirections();
@@ -70,15 +70,15 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       if (this.hasReachedTarget(bestHpEnergy)) break;
 
       // ── STAGNATION RESTART ─────────────────────────────────────
+      // Iterated SA restart: perturb the best known solution (not random).
+      // Apply 3-5 random pivot moves to bestDirections — this escapes the
+      // local basin while staying close to a high-quality region.
+      // Reference: Lourenco, Martin & Stützle (2003) Iterated Local Search.
       if (iteration - lastImprovedAt > stagnationWindow) {
-        // Alternate greedy/random on restart for diversity
-        const useGreedy = Math.random() < 0.5;
-        currentDirections = useGreedy
-          ? this.generateGreedyDirections()
-          : this.generateRandomDirections();
+        currentDirections = this.perturbBest(bestDirections);
         currentHpEnergy   = EnergyCalculator.calculateHPEnergy(this.sequence, currentDirections);
         currentFitness    = EnergyCalculator.calculateFitness(this.sequence, currentDirections, 100);
-        temperature       = this.initialTemperature;
+        temperature       = this.initialTemperature; // reheat fully
         lastImprovedAt    = iteration;
       }
       // ──────────────────────────────────────────────────────────
@@ -161,7 +161,6 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     conformation: Conformation & { fitness: number }
   ): Conformation & { fitness: number } {
     const maxAttempts = 15;
-
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const roll = Math.random();
       let newDirections: Direction[];
@@ -241,6 +240,27 @@ export class SimulatedAnnealingSolver extends BaseSolver {
 
     for (let i = 0; i <= len; i++) result[start + i] = segment[i];
 
+    return result;
+  }
+
+  /**
+   * Perturbs the best known solution by applying k random pivot moves.
+   * Used for Iterated SA restarts — escapes the current basin while
+   * preserving the structural quality of the best solution found.
+   * k=4 is the sweet spot: enough to escape, not so much it becomes random.
+   */
+  private perturbBest(dirs: Direction[]): Direction[] {
+    let result = dirs.slice();
+    const perturbSteps = 4;
+
+    for (let i = 0; i < perturbSteps; i++) {
+      const candidate = this.pivotMove(result);
+      const positions = EnergyCalculator.calculatePositions(this.sequence, candidate);
+      if (EnergyCalculator.countCollisions(positions) === 0) {
+        result = candidate;
+      }
+      // If pivot produces collision, skip it and try next step
+    }
     return result;
   }
 

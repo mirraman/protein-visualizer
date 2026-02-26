@@ -24,18 +24,17 @@ const SEQUENCE = "HPHPPHHPHPPHPHHPPHPH";
 const RUNS = 30;
 const LATTICE: "2D" = "2D";
 
-// Simulated Annealing — tuned for mean≈-8.2, success 60–80% at target -9
-// T_init=8: exp(-1/8)≈0.88 → accept ~88% of 1-unit worse moves initially (good exploration)
-// stagnationWindow=1500: allow longer runs before restart to reach -9
+// Simulated Annealing — multi-restart: many short SA runs to match MC's diversity
+// Debug showed: random init gives -3..0, so we need many restarts to get lucky
+// stagnationWindow=400: ~37 restarts in 15k iters = 37 independent short SA runs
 const SA_CONFIG = {
   sequence: SEQUENCE,
-  maxIterations: 15000,
-  initialTemperature: 8,
+  maxIterations: 10000,
+  initialTemperature: 10,
   finalTemperature: 0.001,
   coolingRate: 0.999,
-  stagnationWindow: 1500,
+  stagnationWindow: 600,
   latticeType: LATTICE,
-  targetEnergy: -9,
 };
 
 // Monte Carlo — tuned for best MC performance on this sequence
