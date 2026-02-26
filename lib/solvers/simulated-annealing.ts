@@ -30,8 +30,16 @@ export class SimulatedAnnealingSolver extends BaseSolver {
     super(parameters);
     this.initialTemperature = parameters.initialTemperature;
     this.finalTemperature   = parameters.finalTemperature;
-    this.coolingRate        = parameters.coolingRate;
-    this.stagnationWindow   = parameters.stagnationWindow ?? 800;
+    this.stagnationWindow   = parameters.stagnationWindow ?? 300;
+
+    // Auto-compute coolingRate so temperature reaches T_final
+    // after one full stagnation cycle (stagnationWindow iterations).
+    // This guarantees each restart cycle cools fully and independently.
+    const itersPerCycle = this.stagnationWindow;
+    this.coolingRate = Math.pow(
+      this.finalTemperature / this.initialTemperature,
+      1 / itersPerCycle
+    );
   }
 
   /**
@@ -90,7 +98,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
         positions: EnergyCalculator.calculatePositions(this.sequence, currentDirections),
         fitness: currentFitness
       };
-      const neighbor = this.generateNeighbor(currentConformation);
+      const neighbor = this.generateNeighbor(currentConformation, temperature);
 
       if (this.acceptMove(currentFitness, neighbor.fitness, temperature)) {
         currentDirections = neighbor.directions.slice();
@@ -104,10 +112,7 @@ export class SimulatedAnnealingSolver extends BaseSolver {
         }
       }
 
-      temperature = this.updateTemperature(temperature, iteration);
-      if (temperature < this.finalTemperature) {
-        temperature = this.finalTemperature;
-      }
+      temperature = this.geometricCooling(temperature);
 
       if (iteration % this.logInterval === 0) {
         energyHistory.push({ iteration, energy: bestHpEnergy });
@@ -148,35 +153,33 @@ export class SimulatedAnnealingSolver extends BaseSolver {
 
   /**
    * Generates a neighbor conformation using structural moves.
-   *
-   * Move distribution (tuned for SA on 2D HP lattice):
-   *   60% pivot move  — rotates head or tail segment around a random pivot
-   *   30% pull move   — reverses a short local segment
-   *   10% single flip — changes one tail gene (kept for fine-grained search)
-   *
-   * All moves preserve the self-avoiding walk property or are retried.
-   * Falls back to the current conformation only if all attempts fail.
+   * Adaptive move distribution: hot phase favors large moves (pivot), cold phase
+   * favors fine-grained moves (pull, singleFlip) to exploit near the current solution.
    */
   private generateNeighbor(
-    conformation: Conformation & { fitness: number }
+    conformation: Conformation & { fitness: number },
+    temperature: number
   ): Conformation & { fitness: number } {
     const maxAttempts = 15;
+
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const roll = Math.random();
       let newDirections: Direction[];
 
-      if (roll < 0.6) {
-        newDirections = this.pivotMove(conformation.directions);
-      } else if (roll < 0.9) {
-        newDirections = this.pullMove(conformation.directions);
+      if (temperature < 1.0) {
+        // Cold phase — fine-grained moves to exploit near current solution
+        if (roll < 0.25)      newDirections = this.pivotMove(conformation.directions);
+        else if (roll < 0.55) newDirections = this.pullMove(conformation.directions);
+        else                  newDirections = this.singleFlip(conformation.directions);
       } else {
-        newDirections = this.singleFlip(conformation.directions);
+        // Hot phase — large structural moves to explore broadly
+        if (roll < 0.60)      newDirections = this.pivotMove(conformation.directions);
+        else if (roll < 0.90) newDirections = this.pullMove(conformation.directions);
+        else                  newDirections = this.singleFlip(conformation.directions);
       }
 
-      const positions  = EnergyCalculator.calculatePositions(this.sequence, newDirections);
-      const collisions = EnergyCalculator.countCollisions(positions);
-
-      if (collisions === 0) {
+      const positions = EnergyCalculator.calculatePositions(this.sequence, newDirections);
+      if (EnergyCalculator.countCollisions(positions) === 0) {
         return {
           sequence:   this.sequence,
           directions: newDirections,
@@ -187,7 +190,6 @@ export class SimulatedAnnealingSolver extends BaseSolver {
       }
     }
 
-    // Fallback: return original unchanged
     return conformation;
   }
 
@@ -302,38 +304,15 @@ export class SimulatedAnnealingSolver extends BaseSolver {
   }
 
   /**
-   * Actualizează temperatura conform programului de răcire exponențial
-   * 
-   * FORMULA: T(t) = T_initial * (T_final / T_initial)^((t / t_max)^2)
-   * 
-   * The squared exponent keeps temperature high longer for exploration:
-   * - At 50% iterations: T ≈ 15% of initial
-   * - At 25% iterations: T ≈ 56% of initial
-   * - Avoids freezing halfway through
-   * 
-   * @param currentTemperature - Temperatura curentă (nu este folosită în această formulă)
-   * @param iteration - Iterația curentă
-   * @returns number - Noua temperatură
+   * Geometric cooling: T = T * coolingRate each iteration.
+   * This is the standard multiplicative schedule from Kirkpatrick et al. (1983).
+   * Temperature is tracked as STATE in solve() — not recomputed from a formula.
+   * This means stagnation restarts (setting T = T_init) work correctly.
+   *
+   * coolingRate = (T_final / T_init)^(1 / maxIterationsPerCycle)
+   * For T_init=8, T_final=0.05, 300 iters per cycle: rate ≈ 0.9948
    */
-  private updateTemperature(currentTemperature: number, iteration: number): number {
-    const progress = iteration / this.maxIterations;
-    const exponent = progress * progress;
-
-    const coolingFactor = Math.pow(
-      this.finalTemperature / this.initialTemperature,
-      exponent
-    );
-
-    const newTemperature = this.initialTemperature * coolingFactor;
-
-    return Math.max(newTemperature, this.finalTemperature);
-  }
-
-  /**
-   * Metodă auxiliară pentru a obține temperatura la o anumită iterație
-   * Utilă pentru monitorizare și debugging
-   */
-  getCurrentTemperature(iteration: number): number {
-    return this.updateTemperature(this.initialTemperature, iteration);
+  private geometricCooling(temperature: number): number {
+    return Math.max(temperature * this.coolingRate, this.finalTemperature);
   }
 }

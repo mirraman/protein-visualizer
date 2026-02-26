@@ -9,14 +9,14 @@ import type { Direction } from "../lib/types";
 
 const SEQUENCE = "HPHPPHHPHPPHPHHPPHPH";
 
-// Patch SA to add debug hooks
+// Patch SA to add debug hooks — use same config as run-benchmarks (geometric cooling, stagnationWindow=300)
 const config = {
   sequence: SEQUENCE,
   maxIterations: 5000, // shorter for debug
   initialTemperature: 8,
-  finalTemperature: 0.001,
-  coolingRate: 0.999,
-  stagnationWindow: 1500,
+  finalTemperature: 0.05,
+  coolingRate: 0.999, // ignored — auto-computed in constructor
+  stagnationWindow: 300,
   latticeType: "2D" as const,
   targetEnergy: -9,
 };
@@ -50,8 +50,8 @@ async function main() {
   const solverAny = solver as any;
 
   const origGenNeighbor = solverAny.generateNeighbor.bind(solverAny);
-  solverAny.generateNeighbor = function (conf: any) {
-    const result = origGenNeighbor(conf);
+  solverAny.generateNeighbor = function (conf: any, temperature: number) {
+    const result = origGenNeighbor(conf, temperature);
     if (result.directions === conf.directions && result.energy === conf.energy) {
       stats.fallbacks++;
     }
@@ -66,28 +66,38 @@ async function main() {
   console.log("\n--- Stats (estimated from progress intervals) ---");
   console.log("Restarts: (check iteration gaps in energy history)");
 
-  // Re-run with detailed iteration logging for first 200 iters
-  console.log("\n--- Detailed trace (first 500 iterations) ---");
+  // Re-run with detailed iteration logging — use ACTUAL solver logic (geometric cooling + stagnation restart)
+  console.log("\n--- Detailed trace (first 600 iterations, geometric cooling + stagnationWindow=300) ---");
   const solver2 = new SimulatedAnnealingSolver(config);
-  const hist: { i: number; current: number; best: number; T: number; accepted: boolean; delta: number }[] = [];
-  let lastBest = Infinity;
-  let lastCurrent = Infinity;
+  const hist: { i: number; current: number; best: number; T: number; accepted: boolean; delta: number; restart?: boolean }[] = [];
+  const stagnationWindow = 300;
+  const T_init = 8;
+  const T_final = 0.05;
+  const coolingRate = Math.pow(T_final / T_init, 1 / stagnationWindow);
+  const maxIter = 600;
 
-  // We need to instrument the solve loop - create a custom debug run
-  const dirs = (solver2 as any).generateRandomDirections();
-  let currentDirs = dirs;
+  const useGreedy = Math.random() < 0.5;
+  let currentDirs = useGreedy
+    ? (solver2 as any).generateGreedyDirections()
+    : (solver2 as any).generateRandomDirections();
   let currentEnergy = EnergyCalculator.calculateHPEnergy(SEQUENCE, currentDirs);
   let currentFitness = EnergyCalculator.calculateFitness(SEQUENCE, currentDirs, 100);
   let bestEnergy = currentEnergy;
   let bestDirs = currentDirs.slice();
-  const T_init = 8;
-  const T_final = 0.001;
-  const maxIter = 500;
+  let temperature = T_init;
+  let lastImprovedAt = 0;
 
   for (let i = 1; i <= maxIter; i++) {
-    const progress = i / maxIter;
-    const exponent = progress * progress;
-    const T = T_init * Math.pow(T_final / T_init, exponent);
+    let didRestart = false;
+    // Stagnation restart (same logic as solve())
+    if (i - lastImprovedAt > stagnationWindow) {
+      currentDirs = (solver2 as any).perturbBest(bestDirs);
+      currentEnergy = EnergyCalculator.calculateHPEnergy(SEQUENCE, currentDirs);
+      currentFitness = EnergyCalculator.calculateFitness(SEQUENCE, currentDirs, 100);
+      temperature = T_init;
+      lastImprovedAt = i;
+      didRestart = true;
+    }
 
     const conf = {
       sequence: SEQUENCE,
@@ -96,18 +106,20 @@ async function main() {
       positions: EnergyCalculator.calculatePositions(SEQUENCE, currentDirs),
       fitness: currentFitness,
     };
-    const neighbor = (solver2 as any).generateNeighbor(conf);
+    const neighbor = (solver2 as any).generateNeighbor(conf, temperature);
     const delta = neighbor.fitness - currentFitness;
-    const accepted = (solver2 as any).acceptMove(currentFitness, neighbor.fitness, T);
+    const accepted = (solver2 as any).acceptMove(currentFitness, neighbor.fitness, temperature);
 
-    if (i <= 100 || (i % 100 === 0) || neighbor.energy <= -8) {
+    const shouldLog = i <= 100 || i % 100 === 0 || i >= maxIter - 10 || neighbor.energy <= -8 || didRestart;
+    if (shouldLog) {
       hist.push({
         i,
         current: currentEnergy,
         best: bestEnergy,
-        T: Math.round(T * 1000) / 1000,
+        T: Math.round(temperature * 1000) / 1000,
         accepted,
         delta,
+        restart: didRestart,
       });
     }
 
@@ -118,21 +130,26 @@ async function main() {
       if (neighbor.energy < bestEnergy) {
         bestEnergy = neighbor.energy;
         bestDirs = neighbor.directions.slice();
+        lastImprovedAt = i;
       }
     }
+
+    temperature = Math.max(temperature * coolingRate, T_final);
   }
 
-  console.log("Iter | current | best  | T     | accept | Δfitness");
-  for (const h of hist.slice(0, 30)) {
+  console.log("Iter | current | best  | T     | accept | Δfitness | restart");
+  for (const h of hist.slice(0, 35)) {
+    const restart = (h as any).restart ? " RESTART" : "";
     console.log(
-      `${String(h.i).padStart(4)} | ${h.current.toString().padStart(6)} | ${h.best.toString().padStart(5)} | ${h.T.toFixed(3)} | ${h.accepted ? "yes" : "no"}    | ${h.delta}`
+      `${String(h.i).padStart(4)} | ${h.current.toString().padStart(6)} | ${h.best.toString().padStart(5)} | ${h.T.toFixed(3)} | ${h.accepted ? "yes" : "no"}    | ${h.delta.toString().padStart(6)}${restart}`
     );
   }
-  if (hist.length > 30) {
+  if (hist.length > 35) {
     console.log("...");
-    for (const h of hist.slice(-5)) {
+    for (const h of hist.slice(-8)) {
+      const restart = (h as any).restart ? " RESTART" : "";
       console.log(
-        `${String(h.i).padStart(4)} | ${h.current.toString().padStart(6)} | ${h.best.toString().padStart(5)} | ${h.T.toFixed(3)} | ${h.accepted ? "yes" : "no"}    | ${h.delta}`
+        `${String(h.i).padStart(4)} | ${h.current.toString().padStart(6)} | ${h.best.toString().padStart(5)} | ${h.T.toFixed(3)} | ${h.accepted ? "yes" : "no"}    | ${h.delta.toString().padStart(6)}${restart}`
       );
     }
   }
@@ -151,7 +168,7 @@ async function main() {
     (c as any).positions = EnergyCalculator.calculatePositions(SEQUENCE, d);
     (c as any).energy = EnergyCalculator.calculateHPEnergy(SEQUENCE, d);
     (c as any).fitness = EnergyCalculator.calculateFitness(SEQUENCE, d, 100);
-    const n = (solver2 as any).generateNeighbor(c);
+    const n = (solver2 as any).generateNeighbor(c, 4); // temp=4 for fallback rate check
     if (n.directions === c.directions) fallbackCount++;
   }
   console.log(`Fallback rate: ${fallbackCount}% (over 100 neighbor samples)`);

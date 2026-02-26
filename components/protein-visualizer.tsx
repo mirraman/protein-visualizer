@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +66,21 @@ import { getPublicProteins, saveProtein } from "@/app/actions";
 import { SavedContentDialog } from "./saved-content-dialog";
 import { Direction } from "@/lib/types";
 import { parseDirections, directionsToString } from "@/lib/utils";
+import { exportCanvasHiRes } from "@/lib/export-utils";
+
+// Inner component to capture Three.js context for hi-res export
+interface CanvasExporterHandle {
+  gl: any;
+  scene: any;
+  camera: any;
+}
+
+const CanvasExporter = forwardRef<CanvasExporterHandle>((_, ref) => {
+  const { gl, scene, camera } = useThree();
+  useImperativeHandle(ref, () => ({ gl, scene, camera }));
+  return null;
+});
+CanvasExporter.displayName = "CanvasExporter";
 
 export type VisualizationType =
   | "3d"
@@ -133,6 +148,20 @@ const ProteinVisualizer = () => {
     "ball-and-stick" | "cartoon" | "space-filling" | "stick"
   >("ball-and-stick");
   const [analysisMetrics, setAnalysisMetrics] = useState<any>(null);
+
+  // Ref for hi-res 3D export
+  const canvasExportRef = useRef<CanvasExporterHandle>(null);
+
+  const handleExport3D = () => {
+    if (canvasExportRef.current) {
+      try {
+        const { gl, scene, camera } = canvasExportRef.current;
+        exportCanvasHiRes(gl, scene, camera, `protein-3d-visualization`);
+      } catch (err) {
+        console.error("Failed to export 3D visualization:", err);
+      }
+    }
+  };
 
   // Load saved proteins and comparisons from database on initial render
   useEffect(() => {
@@ -915,6 +944,15 @@ const ProteinVisualizer = () => {
                                   <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                                 </svg>
                               </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleExport3D}
+                                title="Export as high-res PNG"
+                                className="h-9"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
                             </div>
                           </div>
                         </CardHeader>
@@ -956,6 +994,7 @@ const ProteinVisualizer = () => {
                                   showHHContacts={true}
                                 />
                               </Suspense>
+                              <CanvasExporter ref={canvasExportRef} />
                             </Canvas>
                           </div>
                         </CardContent>

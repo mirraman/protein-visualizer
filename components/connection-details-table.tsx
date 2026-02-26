@@ -1,9 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Button } from "./ui/button";
+import { Download } from "lucide-react";
 import type { Direction } from "@/lib/types";
 import { directionToPosition } from "@/lib/utils";
+import { exportDomToPng } from "@/lib/export-utils";
 
 interface Position {
   x: number;
@@ -106,10 +109,33 @@ export const ConnectionDetailsTable: React.FC<ConnectionDetailsTableProps> = ({
     return residue === "H" ? "text-red-600 font-bold" : "text-blue-600 font-semibold";
   };
 
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleExportTable = async () => {
+    if (cardRef.current) {
+      try {
+        await exportDomToPng(cardRef.current, `connection-details`);
+      } catch (err) {
+        console.error("Failed to export table:", err);
+      }
+    }
+  };
+
   return (
-    <Card>
+    <Card ref={cardRef}>
       <CardHeader>
-        <CardTitle className="text-lg">{title}</CardTitle>
+        <div className="flex justify-between items-center">
+          <CardTitle className="text-lg">{title}</CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleExportTable}
+            title="Export table as PNG"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">

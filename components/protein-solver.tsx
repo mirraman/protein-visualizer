@@ -31,6 +31,7 @@ import { Direction } from "@/lib/types";
 import { EnergyCalculator } from "@/lib/solvers";
 import type { SolverResult, Conformation } from "@/lib/solvers";
 import { useSolver } from "@/hooks/useSolver";
+import { exportDomToPng, exportCanvasHiRes } from "@/lib/export-utils";
 
 interface ProteinSolverProps {
   sequence: string;
@@ -45,6 +46,9 @@ interface ProteinSolverProps {
 
 interface ScreenshotHandle {
   capture: () => string;
+  gl: any;
+  scene: any;
+  camera: any;
 }
 
 const CanvasScreenshot = forwardRef<ScreenshotHandle>((_, ref) => {
@@ -54,6 +58,9 @@ const CanvasScreenshot = forwardRef<ScreenshotHandle>((_, ref) => {
       gl.render(scene, camera);
       return gl.domElement.toDataURL("image/png");
     },
+    gl,
+    scene,
+    camera,
   }));
   return null;
 });
@@ -140,19 +147,47 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
   // UI state
   const [showDetails, setShowDetails] = useState(false);
   
-  // Ref for export
+  // Refs for export
   const screenshotRef = useRef<ScreenshotHandle>(null);
+  const configCardRef = useRef<HTMLDivElement>(null);
+  const resultsCardRef = useRef<HTMLDivElement>(null);
 
   const handleExportImage = () => {
     if (screenshotRef.current) {
       try {
-        const dataUrl = screenshotRef.current.capture();
-        const link = document.createElement("a");
-        link.download = `protein-visualization-${latticeType}.png`;
-        link.href = dataUrl;
-        link.click();
+        const { gl, scene, camera } = screenshotRef.current as any;
+        if (gl && scene && camera) {
+          exportCanvasHiRes(gl, scene, camera, `protein-3d-${latticeType}`);
+        } else {
+          // fallback to standard capture
+          const dataUrl = screenshotRef.current.capture();
+          const link = document.createElement("a");
+          link.download = `protein-visualization-${latticeType}.png`;
+          link.href = dataUrl;
+          link.click();
+        }
       } catch (err) {
         console.error("Failed to export image:", err);
+      }
+    }
+  };
+
+  const handleExportConfig = async () => {
+    if (configCardRef.current) {
+      try {
+        await exportDomToPng(configCardRef.current, `solver-config-${algorithmType}`);
+      } catch (err) {
+        console.error("Failed to export config:", err);
+      }
+    }
+  };
+
+  const handleExportResults = async () => {
+    if (resultsCardRef.current) {
+      try {
+        await exportDomToPng(resultsCardRef.current, `solver-results-${algorithmType}`);
+      } catch (err) {
+        console.error("Failed to export results:", err);
       }
     }
   };
@@ -251,9 +286,20 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
       {/* Configuration Card */}
       <div className="space-y-4">
           {/* Compact Algorithm Configuration */}
-          <Card>
+          <Card ref={configCardRef}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Solver Configuration</CardTitle>
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-lg">Solver Configuration</CardTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleExportConfig}
+                  title="Export configuration as PNG"
+                >
+                  <Download className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
@@ -617,9 +663,20 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
 
           {/* Energy Results - Compact */}
           {currentResult && (
-            <Card>
+            <Card ref={resultsCardRef}>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold">Results</CardTitle>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-base font-semibold">Results</CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={handleExportResults}
+                    title="Export results as PNG"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
