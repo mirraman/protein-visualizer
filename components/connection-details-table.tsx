@@ -132,6 +132,7 @@ export const ConnectionDetailsTable: React.FC<ConnectionDetailsTableProps> = ({
             className="h-8 w-8"
             onClick={handleExportTable}
             title="Export table as PNG"
+            data-export-exclude
           >
             <Download className="h-4 w-4" />
           </Button>

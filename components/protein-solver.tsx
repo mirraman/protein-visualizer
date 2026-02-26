@@ -296,6 +296,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                   className="h-8 w-8"
                   onClick={handleExportConfig}
                   title="Export configuration as PNG"
+                  data-export-exclude
                 >
                   <Download className="h-4 w-4" />
                 </Button>
@@ -673,6 +674,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
                     className="h-8 w-8"
                     onClick={handleExportResults}
                     title="Export results as PNG"
+                    data-export-exclude
                   >
                     <Download className="h-4 w-4" />
                   </Button>

@@ -16,6 +16,10 @@ export async function exportDomToPng(
 	const dataUrl = await toPng(element, {
 		pixelRatio: scale,
 		backgroundColor: "#ffffff",
+		filter: (node: HTMLElement) => {
+			// Hide elements marked with data-export-exclude (e.g. download buttons)
+			return !node?.dataset?.exportExclude;
+		},
 	});
 
 	triggerDownload(dataUrl, `${filename}.png`);
