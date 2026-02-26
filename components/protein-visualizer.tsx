@@ -67,6 +67,7 @@ import { SavedContentDialog } from "./saved-content-dialog";
 import { Direction } from "@/lib/types";
 import { parseDirections, directionsToString } from "@/lib/utils";
 import { exportCanvasHiRes } from "@/lib/export-utils";
+import { exportPipelineImage } from "@/lib/pipeline-export";
 
 // Inner component to capture Three.js context for hi-res export
 interface CanvasExporterHandle {
@@ -160,6 +161,30 @@ const ProteinVisualizer = () => {
       } catch (err) {
         console.error("Failed to export 3D visualization:", err);
       }
+    }
+  };
+
+  const handleExportPipeline = async () => {
+    const configEl = document.getElementById("pipeline-config");
+    const resultsEl = document.getElementById("pipeline-results");
+    const connectionEl = document.getElementById("pipeline-connection");
+    const canvasData = canvasExportRef.current;
+
+    if (!configEl || !canvasData || !resultsEl || !connectionEl) {
+      toast({
+        title: "Pipeline export",
+        description: "Run the solver first and switch to the Connections tab so all sections are available.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await exportPipelineImage(configEl, canvasData, resultsEl, connectionEl);
+      toast({ title: "Pipeline exported", description: "Pipeline PNG downloaded." });
+    } catch (err) {
+      console.error("Pipeline export failed:", err);
+      toast({ title: "Export failed", description: String(err), variant: "destructive" });
     }
   };
 
@@ -1001,7 +1026,7 @@ const ProteinVisualizer = () => {
                       </Card>
 
                       {/* Real-time Analysis Panel */}
-                      <Card>
+                      <Card id="pipeline-connection">
                         <CardHeader className="pb-3">
                           <CardTitle className="text-lg font-semibold">Analysis & Connections</CardTitle>
                         </CardHeader>
@@ -1021,6 +1046,18 @@ const ProteinVisualizer = () => {
                           </div>
                         </CardContent>
                       </Card>
+
+                      {/* Export Pipeline Button */}
+                      {solverResult && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={handleExportPipeline}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          Export Full Pipeline Image
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ) : (

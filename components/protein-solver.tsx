@@ -286,7 +286,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
       {/* Configuration Card */}
       <div className="space-y-4">
           {/* Compact Algorithm Configuration */}
-          <Card ref={configCardRef}>
+          <Card ref={configCardRef} id="pipeline-config">
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
                 <CardTitle className="text-lg">Solver Configuration</CardTitle>
@@ -664,7 +664,7 @@ const ProteinSolver: React.FC<ProteinSolverProps> = ({
 
           {/* Energy Results - Compact */}
           {currentResult && (
-            <Card ref={resultsCardRef}>
+            <Card ref={resultsCardRef} id="pipeline-results">
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-center">
                   <CardTitle className="text-base font-semibold">Results</CardTitle>
